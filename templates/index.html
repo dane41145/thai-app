@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thai Flashcards</title>
+    <style>
+        :root { --primary: #0078d4; --success: #107c10; --warning: #d83b01; --bg: #f0f2f5; --text: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-top: 40px; overflow-x: hidden; }
+
+        /* LOADING */
+        #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.5s; }
+        .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        .loading-text { font-size: 18px; color: #666; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* MENUS */
+        #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
+        .cat-btn { background: white; width: 80%; padding: 30px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.6rem; font-weight: bold; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; align-items: center; gap: 15px; justify-content: center; }
+        .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
+
+        #deckMenu { width: 100%; max-width: 900px; display: none; flex-direction: column; gap: 15px; align-items: center; padding: 0 20px; box-sizing: border-box; }
+        .deck-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; }
+        .deck-card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; display: flex; flex-direction: row; align-items: center; gap: 10px; border-bottom: 4px solid transparent; }
+        .deck-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-bottom-color: var(--primary); }
+        .deck-info { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+        .deck-title { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+        .deck-count { background: #eee; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem; color: #666; }
+        .deck-progress { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; align-items: flex-end; }
+        .deck-progress-row { display: flex; align-items: center; gap: 3px; }
+        .progress-done { opacity: 1; }
+        .progress-pending { opacity: 0.4; }
+        .deck-actions { display: flex; flex-direction: column; gap: 4px; }
+        .deck-reset-btn, .deck-download-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: 0.4; transition: opacity 0.2s; padding: 2px; }
+        .deck-reset-btn:hover, .deck-download-btn:hover { opacity: 1; }
+        @media (max-width: 600px) { .deck-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 400px) { .deck-grid { grid-template-columns: 1fr; } }
+        .back-nav-btn { background: none; border: none; color: #666; font-size: 1rem; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; align-self: flex-start; }
+        .back-nav-btn:hover { color: var(--primary); }
+
+        /* GAME UI */
+        #gameContainer { display: none; flex-direction: column; align-items: center; width: 100%; }
+        .controls { margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: white; padding: 8px 15px; border-radius: 50px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .home-btn { background: #f0f0f0; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; color: #555; }
+        .home-btn:hover { background: #e0e0e0; color: #000; }
+        .mode-toggle { display: flex; background: #f0f0f0; border-radius: 25px; padding: 4px; gap: 5px; }
+        .toggle-btn { border: none; background: transparent; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 600; color: #666; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+        .toggle-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .counter-badge { background:#eee; padding: 4px 10px; border-radius: 10px; font-size: 0.9em; font-weight: 600; color: #555; }
+        .deck-title-badge { font-size: 0.95em; font-weight: 600; color: #333; }
+
+        /* CARD STYLES */
+        .card-wrapper { position: relative; width: 340px; height: 460px; perspective: 1000px; }
+        .card-mover { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        .card { width: 100%; height: 100%; position: relative; transition: transform 0.6s; transform-style: preserve-3d; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .card.is-flipped { transform: rotateY(180deg); }
+        .face { position: absolute; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; background: white; border-radius: 20px; padding: 20px; box-sizing: border-box; }
+        .face.back { transform: rotateY(180deg); background-color: #f8f9fa; border: 2px solid var(--primary); }
+
+        /* ANIMATIONS */
+        @keyframes slideOutRight { to { transform: translateX(120%) rotate(15deg); opacity: 0; } }
+        @keyframes slideOutLeft { to { transform: translateX(-120%) rotate(-15deg); opacity: 0; } }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+        @keyframes pulse-success { 0% { box-shadow: 0 0 0 0 rgba(16, 124, 16, 0.4); } 70% { box-shadow: 0 0 0 20px rgba(16, 124, 16, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 124, 16, 0); } }
+        .anim-slide-right { animation: slideOutRight 0.4s forwards ease-in; }
+        .anim-slide-left { animation: slideOutLeft 0.4s forwards ease-in; }
+        .anim-pop-in { animation: popIn 0.4s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .anim-shake { animation: shake 0.5s ease-in-out; }
+        .anim-pulse-success { animation: pulse-success 0.6s ease-out; }
+
+        /* TEXT STYLES */
+        h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; }
+        .thai-font { font-weight: normal; }
+        .eng-font { font-weight: 600; color: #444; }
+        .phonetic { font-size: 1.5rem; color: #888; margin-top: 10px; font-weight: 300; }
+        .text-jumbo { font-size: 8rem; }
+        .text-huge { font-size: 5rem; }
+        .text-large { font-size: 3.5rem; }
+        .text-med { font-size: 2.2rem; }
+
+        .audio-btn { margin-top: 30px; background: var(--primary); color: white; border: none; width: 60px; height: 60px; border-radius: 50%; font-size: 24px; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,120,212, 0.3); }
+        .audio-btn:active { transform: scale(0.95); }
+
+        .action-area { margin-top: 30px; display: flex; gap: 20px; height: 60px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .action-area.visible { opacity: 1; pointer-events: auto; }
+        .action-btn { border: none; padding: 0 30px; font-size: 16px; font-weight: 600; border-radius: 30px; cursor: pointer; color: white; display: flex; align-items: center; gap: 10px; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .action-btn:active { transform: scale(0.95); }
+        .btn-retry { background-color: var(--warning); }
+        .btn-success { background-color: var(--success); }
+
+        .victory-screen { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 400px; }
+        .restart-btn { margin-top: 20px; padding: 12px 24px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer; }
+
+        /* NUMBERS GAME STYLES */
+        #numbersContainer { display: none; flex-direction: column; align-items: center; width: 100%; }
+        .numbers-controls { margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: white; padding: 8px 15px; border-radius: 50px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        
+        .numbers-card { background: white; width: 340px; min-height: 400px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; box-sizing: border-box; }
+        
+        .level-indicator { font-size: 1rem; color: #888; margin-bottom: 10px; }
+        .level-progress { display: flex; gap: 8px; margin-bottom: 30px; }
+        .level-dot { width: 12px; height: 12px; border-radius: 50%; background: #ddd; transition: all 0.3s; }
+        .level-dot.completed { background: var(--success); }
+        .level-dot.current { background: var(--primary); transform: scale(1.3); }
+        
+        .numbers-audio-btn { background: var(--primary); color: white; border: none; width: 80px; height: 80px; border-radius: 50%; font-size: 32px; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,120,212, 0.3); margin-bottom: 30px; }
+        .numbers-audio-btn:hover { transform: scale(1.05); }
+        .numbers-audio-btn:active { transform: scale(0.95); }
+        
+        .digit-display { display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 25px; min-height: 60px; flex-wrap: wrap; }
+        .digit-slot { width: 36px; height: 50px; border-bottom: 3px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 600; color: var(--text); transition: all 0.2s; margin: 2px; }
+        .digit-slot.filled { border-bottom-color: var(--primary); color: var(--primary); }
+        .digit-slot.correct { border-bottom-color: var(--success); color: var(--success); }
+        .digit-slot.wrong { border-bottom-color: var(--warning); color: var(--warning); }
+        .digit-comma { font-size: 2rem; color: #888; margin: 0 2px; align-self: flex-end; padding-bottom: 5px; }
+        
+        .number-input { position: absolute; opacity: 0; pointer-events: none; }
+        
+        .numbers-message { font-size: 1.1rem; color: #666; min-height: 30px; margin-top: 10px; }
+        .numbers-message.error { color: var(--warning); }
+        .numbers-message.success { color: var(--success); }
+
+        .numbers-victory { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Connecting...</div>
+    </div>
+
+    <div id="categoryMenu">
+        <h1 style="color: #444; margin-bottom: 30px;">Choose Mode</h1>
+        <button class="cat-btn" onclick="showDecks('vocab')"> 📖 Vocab </button>
+        <button class="cat-btn" onclick="showDecks('script')"> ✍️ Script </button>
+        <button class="cat-btn" onclick="startNumbersGame()"> 🔢 Numbers </button>
+    </div>
+
+    <div id="deckMenu">
+        <button class="back-nav-btn" onclick="goBackToCategories()">🔙 <strong>Change Mode</strong></button>
+        <h1 style="color: #444; margin-bottom: 20px;">Select a Deck</h1>
+        <div id="deckListArea" class="deck-grid"></div>
+    </div>
+
+    <div id="gameContainer">
+        <div class="controls" id="topControls">
+            <button class="home-btn" onclick="goHome()" title="Back to Decks">🏠</button>
+            <div class="mode-toggle">
+                <button id="btnThai" class="toggle-btn active" onclick="switchMode('thai_front')">🇹🇭 Thai</button>
+                <button id="btnEng" class="toggle-btn" onclick="switchMode('eng_front')">🇬🇧 Eng</button>
+            </div>
+            <span id="deckTitle" class="deck-title-badge"></span>
+            <span id="counter" class="counter-badge">--</span>
+        </div>
+
+        <div class="card-wrapper" id="gameArea">
+            <div class="card-mover" id="cardMover">
+                <div class="card" id="flashcard" onclick="flipCard()">
+                    <div class="face front">
+                        <h2 id="frontText">...</h2>
+                        <div id="frontPhonetic" class="phonetic"></div>
+                        <button id="frontAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                    </div>
+                    <div class="face back">
+                        <h2 id="backText">...</h2>
+                        <div id="backPhonetic" class="phonetic"></div>
+                        <button id="backAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="victory-screen" id="victoryArea">
+            <div style="font-size: 80px; margin-bottom: 20px;">🎉</div>
+            <h1>Deck Complete!</h1>
+            <button class="restart-btn" onclick="restartRound()">Start Over</button>
+        </div>
+
+        <div class="action-area" id="actionArea">
+            <button class="action-btn btn-retry" onclick="handleResult(false)">Study Again ↺</button>
+            <button class="action-btn btn-success" onclick="handleResult(true)">Got It! ✓</button>
+        </div>
+    </div>
+
+    <!-- NUMBERS GAME -->
+    <div id="numbersContainer">
+        <div class="numbers-controls">
+            <button class="home-btn" onclick="exitNumbersGame()" title="Back to Menu">🏠</button>
+            <span class="counter-badge" id="numbersLevel">Level 1 of 7</span>
+        </div>
+
+        <div class="numbers-card" id="numbersCard">
+            <div class="level-progress" id="levelProgress">
+                <div class="level-dot current"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+            </div>
+            
+            <button class="numbers-audio-btn" onclick="playNumberAudio()" title="Play Audio">🔊</button>
+            
+            <div class="digit-display" id="digitDisplay"></div>
+            
+            <input type="text" inputmode="numeric" class="number-input" id="numberInput" autocomplete="off">
+            
+            <div class="numbers-message" id="numbersMessage">Listen and type the number</div>
+        </div>
+
+        <div class="numbers-victory" id="numbersVictory">
+            <div style="font-size: 80px; margin-bottom: 20px;">🎉</div>
+            <h1>Perfect Score!</h1>
+            <p style="color: #666; font-size: 1.1rem;">You mastered all 7 levels!</p>
+            <button class="restart-btn" onclick="restartNumbersGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const audioCache = {};
+        let allDecksData = []; 
+        let progressData = {}; // Track completion status
+        let fullVocab = []; 
+        let deck = [];      
+        let currentMode = 'thai_front';
+        let currentCategory = 'vocab';
+        let currentDeckName = '';
+        let currentDeckId = '';
+        let isFlipped = false;
+        let isAnimating = false;
+
+        // ========== NUMBERS GAME STATE ==========
+        let numbersGameActive = false;
+        let numbersInputLocked = false; // Prevents input during transitions
+        let currentNumberLevel = 0; // 0-6 for levels 1-7
+        let numbersChallenges = []; // Array of {number: 123, audioUrl: '...'}
+        let currentInput = '';
+
+        async function initApp() {
+            try {
+                // Fetch decks and progress in parallel
+                const [decksResponse, progressResponse] = await Promise.all([
+                    fetch('/decks'),
+                    fetch('/progress')
+                ]);
+                allDecksData = await decksResponse.json();
+                progressData = await progressResponse.json();
+                console.log("Decks loaded:", allDecksData);
+                console.log("Progress loaded:", progressData);
+                hideLoading();
+                document.getElementById('categoryMenu').style.display = 'flex';
+                document.getElementById('deckMenu').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'none';
+            } catch (err) {
+                document.getElementById('loadingText').innerText = "Connection Failed: " + err.message;
+            }
+        }
+
+        function showDecks(category) {
+            currentCategory = category;
+            const filtered = allDecksData.filter(d => d.category === category);
+            const listArea = document.getElementById('deckListArea');
+            listArea.innerHTML = '';
+
+            if (filtered.length === 0) {
+                listArea.innerHTML = '<div style="color:#888;">No decks found.</div>';
+            } else {
+                filtered.forEach(d => {
+                    const progress = progressData[d.gid] || { thai: false, eng: false };
+                    const thaiDone = progress.thai;
+                    const engDone = progress.eng;
+                    const isVocab = d.category === 'vocab';
+                    
+                    const div = document.createElement('div');
+                    div.className = 'deck-card';
+                    div.innerHTML = `
+                        <div class="deck-info">
+                            <span class="deck-title">${d.name}</span>
+                            <span class="deck-count">${d.count} cards</span>
+                        </div>
+                        <div class="deck-progress">
+                            <div class="deck-progress-row ${thaiDone ? 'progress-done' : 'progress-pending'}">
+                                🇹🇭 ${thaiDone ? '✅' : '☑️'}
+                            </div>
+                            <div class="deck-progress-row ${engDone ? 'progress-done' : 'progress-pending'}">
+                                🇬🇧 ${engDone ? '✅' : '☑️'}
+                            </div>
+                        </div>
+                        <div class="deck-actions">
+                            <button class="deck-reset-btn" title="Reset progress" data-deck-id="${d.gid}">🔄</button>
+                            ${isVocab ? `<button class="deck-download-btn" title="Download MP3" data-deck-id="${d.gid}">⬇️</button>` : ''}
+                        </div>
+                    `;
+                    
+                    // Click on card (but not buttons) loads the deck
+                    div.onclick = (e) => {
+                        if (!e.target.classList.contains('deck-reset-btn') && !e.target.classList.contains('deck-download-btn')) {
+                            loadDeckData(d.gid, d.name);
+                        }
+                    };
+                    
+                    // Reset button handler
+                    const resetBtn = div.querySelector('.deck-reset-btn');
+                    resetBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        resetDeckProgress(d.gid);
+                    };
+                    
+                    // Download button handler (only for vocab)
+                    if (isVocab) {
+                        const downloadBtn = div.querySelector('.deck-download-btn');
+                        downloadBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            downloadDeckMp3(d.gid, d.name);
+                        };
+                    }
+                    
+                    listArea.appendChild(div);
+                });
+            }
+
+            document.getElementById('categoryMenu').style.display = 'none';
+            document.getElementById('deckMenu').style.display = 'flex';
+        }
+
+        async function downloadDeckMp3(deckId, deckName) {
+            // Show loading indicator
+            showLoading(`Generating ${deckName} MP3... This may take a minute.`);
+            
+            try {
+                const response = await fetch(`/download_deck/${deckId}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${deckName.replace(' ', '_')}.mp3`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    alert('Failed to generate MP3');
+                }
+            } catch (err) {
+                console.error('Download failed:', err);
+                alert('Failed to download MP3');
+            }
+            
+            hideLoading();
+        }
+
+        async function resetDeckProgress(deckId) {
+            try {
+                const response = await fetch(`/reset/${deckId}`, { method: 'POST' });
+                if (response.ok) {
+                    progressData[deckId] = { thai: false, eng: false };
+                    showDecks(currentCategory); // Refresh the display
+                }
+            } catch (err) {
+                console.error('Failed to reset progress:', err);
+            }
+        }
+
+        function goBackToCategories() {
+            document.getElementById('deckMenu').style.display = 'none';
+            document.getElementById('categoryMenu').style.display = 'flex';
+        }
+
+        async function loadDeckData(gid, deckName) {
+            showLoading("Downloading Deck...");
+            try {
+                const response = await fetch(`/vocab/${gid}`);
+                const words = await response.json();
+                if (!words || words.length === 0) throw new Error("Empty deck");
+
+                // Store deck info
+                currentDeckId = gid;
+                currentDeckName = deckName || 'Deck';
+                document.getElementById('deckTitle').innerText = currentDeckName;
+
+                // PRELOAD AUDIO USING 'audio_text' (which contains override if applicable)
+                const preloadCount = Math.min(words.length, 5);
+                for(let i=0; i<preloadCount; i++) {
+                     fetch('/speak', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({text: words[i].audio_text, speed: 0.9})
+                    }).then(r=>r.blob()).then(b => { audioCache[words[i].audio_text] = URL.createObjectURL(b); });
+                }
+
+                fullVocab = [...words];
+                hideLoading();
+                startGameUI();
+            } catch (err) {
+                alert("Failed to load deck data.");
+                hideLoading();
+            }
+        }
+
+        function startGameUI() {
+            document.getElementById('deckMenu').style.display = 'none';
+            document.getElementById('gameContainer').style.display = 'flex';
+            switchMode('thai_front'); 
+        }
+
+        function goHome() {
+            document.getElementById('gameContainer').style.display = 'none';
+            document.getElementById('deckMenu').style.display = 'flex';
+        }
+
+        function switchMode(newMode) {
+            currentMode = newMode;
+            document.getElementById('btnThai').classList.toggle('active', newMode === 'thai_front');
+            document.getElementById('btnEng').classList.toggle('active', newMode === 'eng_front');
+            restartRound();
+        }
+
+        function restartRound() {
+            deck = [...fullVocab]; 
+            deck.sort(() => Math.random() - 0.5);
+            document.getElementById('victoryArea').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            document.getElementById('actionArea').style.display = 'flex';
+            document.getElementById('actionArea').classList.remove('visible'); // Hide buttons until flip
+            document.getElementById('topControls').style.visibility = 'visible';
+            
+            // Reset card mover animation classes
+            const moverEl = document.getElementById('cardMover');
+            moverEl.classList.remove('anim-slide-right', 'anim-slide-left', 'anim-pop-in');
+            
+            isFlipped = false;
+            isAnimating = false;
+            const cardEl = document.getElementById('flashcard');
+            cardEl.classList.remove('is-flipped');
+            cardEl.style.transition = 'none';
+            renderCard();
+            setTimeout(() => { cardEl.style.transition = 'transform 0.6s'; }, 50);
+        }
+
+        function handleResult(isCorrect) {
+            if (deck.length === 0 || isAnimating) return;
+            isAnimating = true;
+            const moverEl = document.getElementById('cardMover');
+            const actionArea = document.getElementById('actionArea');
+            moverEl.classList.add(isCorrect ? 'anim-slide-right' : 'anim-slide-left');
+            actionArea.classList.remove('visible'); 
+
+            setTimeout(() => {
+                const currentCard = deck[0];
+                deck.shift(); 
+                if (!isCorrect) deck.push(currentCard);
+
+                if (deck.length === 0) {
+                    showVictory();
+                    isAnimating = false;
+                    return;
+                }
+                moverEl.classList.remove('anim-slide-right', 'anim-slide-left');
+                const cardEl = document.getElementById('flashcard');
+                cardEl.style.transition = 'none'; 
+                cardEl.classList.remove('is-flipped');
+                isFlipped = false;
+                updateCardContent();
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        cardEl.style.transition = 'transform 0.6s';
+                        moverEl.classList.add('anim-pop-in');
+                        setTimeout(() => {
+                            moverEl.classList.remove('anim-pop-in');
+                            isAnimating = false;
+                        }, 300);
+                    });
+                });
+            }, 300);
+        }
+
+        function updateCardContent() {
+            const counter = document.getElementById('counter');
+            if (deck.length === 0) return;
+            const cardData = deck[0];
+            counter.innerText = `${deck.length} left`;
+
+            const frontText = document.getElementById('frontText');
+            const frontPhonetic = document.getElementById('frontPhonetic');
+            const frontBtn = document.getElementById('frontAudioBtn');
+
+            const backText = document.getElementById('backText');
+            const backPhonetic = document.getElementById('backPhonetic');
+            const backBtn = document.getElementById('backAudioBtn');
+
+            frontPhonetic.style.display = 'none';
+            frontBtn.style.display = 'none';
+            backPhonetic.style.display = 'none';
+            backBtn.style.display = 'none';
+
+            function setSize(el, text, isThai) {
+                el.className = isThai ? 'thai-font' : 'eng-font';
+                if (isThai && text.length <= 2) el.classList.add('text-jumbo');
+                else if (text.length <= 4) el.classList.add('text-huge');
+                else if (text.length <= 10) el.classList.add('text-large');
+                else el.classList.add('text-med');
+            }
+
+            // === 1. VOCAB LOGIC ===
+            if (currentCategory === 'vocab') {
+                if (currentMode === 'thai_front') {
+                    // Front
+                    frontText.innerText = cardData.thai;
+                    setSize(frontText, cardData.thai, true);
+                    if(cardData.phonetic) {
+                        frontPhonetic.innerText = `/${cardData.phonetic}/`;
+                        frontPhonetic.style.display = 'block';
+                    }
+                    frontBtn.style.display = 'flex';
+
+                    // Back
+                    backText.innerText = cardData.eng;
+                    setSize(backText, cardData.eng, false);
+                } else {
+                    // Front
+                    frontText.innerText = cardData.eng;
+                    setSize(frontText, cardData.eng, false);
+
+                    // Back
+                    backText.innerText = cardData.thai;
+                    setSize(backText, cardData.thai, true);
+                    if(cardData.phonetic) {
+                        backPhonetic.innerText = `/${cardData.phonetic}/`;
+                        backPhonetic.style.display = 'block';
+                    }
+                    backBtn.style.display = 'flex';
+                }
+            } 
+            
+            // === 2. SCRIPT LOGIC ===
+            else if (currentCategory === 'script') {
+                if (currentMode === 'thai_front') {
+                    // Reading Mode
+                    frontText.innerText = cardData.thai;
+                    setSize(frontText, cardData.thai, true);
+                    
+                    backText.innerText = cardData.phonetic;
+                    setSize(backText, cardData.phonetic, false);
+                    backBtn.style.display = 'flex';
+                } else {
+                    // Writing Mode
+                    frontText.innerText = cardData.phonetic;
+                    setSize(frontText, cardData.phonetic, false);
+
+                    backText.innerText = cardData.thai;
+                    setSize(backText, cardData.thai, true);
+                    backPhonetic.innerText = `/${cardData.phonetic}/`;
+                    backPhonetic.style.display = 'block';
+                    backBtn.style.display = 'flex';
+                }
+            }
+
+            if (currentCategory === 'vocab' && currentMode === 'thai_front') playCurrentAudio();
+        }
+
+        function renderCard() { updateCardContent(); }
+
+        function showVictory() {
+            document.getElementById('gameArea').style.display = 'none';
+            document.getElementById('actionArea').style.display = 'none';
+            document.getElementById('topControls').style.visibility = 'hidden';
+            document.getElementById('victoryArea').style.display = 'flex';
+            
+            // Mark this deck/mode as complete
+            markDeckComplete();
+        }
+
+        async function markDeckComplete() {
+            const mode = currentMode === 'thai_front' ? 'thai' : 'eng';
+            try {
+                const response = await fetch(`/complete/${currentDeckId}/${mode}`, { method: 'POST' });
+                if (response.ok) {
+                    // Update local progress data
+                    if (!progressData[currentDeckId]) {
+                        progressData[currentDeckId] = { thai: false, eng: false };
+                    }
+                    progressData[currentDeckId][mode] = true;
+                    console.log(`Marked ${currentDeckId} [${mode}] as complete`);
+                }
+            } catch (err) {
+                console.error('Failed to mark complete:', err);
+            }
+        }
+
+        function flipCard() {
+            if (isFlipped || isAnimating) return;
+            const cardEl = document.getElementById('flashcard');
+            isFlipped = true;
+            cardEl.classList.add('is-flipped');
+            document.getElementById('actionArea').classList.add('visible');
+            playCurrentAudio();
+        }
+
+        function playCurrentAudio() {
+            if (deck.length === 0) return;
+            
+            // USE THE CORRECT AUDIO TEXT (OVERRIDE or THAI)
+            const textToSpeak = deck[0].audio_text;
+
+            if (audioCache[textToSpeak]) {
+                new Audio(audioCache[textToSpeak]).play();
+                return;
+            }
+            fetch('/speak', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: textToSpeak, speed: 0.9})
+            })
+            .then(res => res.blob())
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                audioCache[textToSpeak] = url;
+                new Audio(url).play();
+            })
+            .catch(e => console.error("Audio failed", e));
+        }
+
+        function showLoading(msg) {
+            const overlay = document.getElementById('loadingOverlay');
+            document.getElementById('loadingText').innerText = msg;
+            overlay.style.display = 'flex';
+            overlay.style.opacity = '1';
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 500);
+        }
+
+        // ========== NUMBERS GAME ==========
+        
+        function generateRandomNumber(digits) {
+            if (digits === 1) return Math.floor(Math.random() * 10);
+            const min = Math.pow(10, digits - 1);
+            const max = Math.pow(10, digits) - 1;
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        async function generateNumbersChallenges() {
+            showLoading("Generating numbers...");
+            numbersChallenges = [];
+            
+            for (let i = 1; i <= 7; i++) {
+                const num = generateRandomNumber(i);
+                numbersChallenges.push({ number: num, audioUrl: null });
+            }
+            
+            // Preload audio for all numbers using the /speak_number endpoint
+            const preloadPromises = numbersChallenges.map(async (challenge, index) => {
+                try {
+                    const response = await fetch('/speak_number', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ number: challenge.number, speed: 0.85 })
+                    });
+                    const blob = await response.blob();
+                    challenge.audioUrl = URL.createObjectURL(blob);
+                } catch (e) {
+                    console.error(`Failed to load audio for level ${index + 1}`, e);
+                }
+            });
+            
+            await Promise.all(preloadPromises);
+            hideLoading();
+        }
+
+        async function startNumbersGame() {
+            document.getElementById('categoryMenu').style.display = 'none';
+            await generateNumbersChallenges();
+            
+            currentNumberLevel = 0;
+            numbersGameActive = true;
+            
+            document.getElementById('numbersContainer').style.display = 'flex';
+            document.getElementById('numbersCard').style.display = 'flex';
+            document.getElementById('numbersVictory').style.display = 'none';
+            
+            renderNumbersLevel();
+            
+            // Focus the hidden input
+            document.getElementById('numberInput').focus();
+            
+            // Auto-play first audio after a short delay
+            setTimeout(() => playNumberAudio(), 500);
+        }
+
+        function renderNumbersLevel() {
+            const level = currentNumberLevel;
+            const challenge = numbersChallenges[level];
+            const numStr = String(challenge.number);
+            const digits = numStr.length;
+            
+            // Update level indicator
+            document.getElementById('numbersLevel').innerText = `Level ${level + 1} of 7`;
+            
+            // Update progress dots
+            const dots = document.querySelectorAll('.level-dot');
+            dots.forEach((dot, i) => {
+                dot.classList.remove('completed', 'current');
+                if (i < level) dot.classList.add('completed');
+                else if (i === level) dot.classList.add('current');
+            });
+            
+            // Build digit display with commas
+            const digitDisplay = document.getElementById('digitDisplay');
+            digitDisplay.innerHTML = '';
+            
+            // Format: add commas from the right
+            for (let i = 0; i < digits; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'digit-slot';
+                slot.dataset.index = i;
+                digitDisplay.appendChild(slot);
+                
+                // Add comma after appropriate positions (from right: every 3 digits)
+                const posFromRight = digits - 1 - i;
+                if (posFromRight > 0 && posFromRight % 3 === 0) {
+                    const comma = document.createElement('span');
+                    comma.className = 'digit-comma';
+                    comma.innerText = ',';
+                    digitDisplay.appendChild(comma);
+                }
+            }
+            
+            // Reset input
+            currentInput = '';
+            document.getElementById('numberInput').value = '';
+            document.getElementById('numbersMessage').innerText = 'Listen and type the number';
+            document.getElementById('numbersMessage').className = 'numbers-message';
+        }
+
+        function playNumberAudio() {
+            const challenge = numbersChallenges[currentNumberLevel];
+            if (challenge && challenge.audioUrl) {
+                new Audio(challenge.audioUrl).play();
+            }
+        }
+
+        function updateDigitDisplay() {
+            const slots = document.querySelectorAll('.digit-slot');
+            slots.forEach((slot, i) => {
+                if (i < currentInput.length) {
+                    slot.innerText = currentInput[i];
+                    slot.classList.add('filled');
+                } else {
+                    slot.innerText = '';
+                    slot.classList.remove('filled');
+                }
+                slot.classList.remove('correct', 'wrong');
+            });
+        }
+
+        function checkNumberAnswer() {
+            const challenge = numbersChallenges[currentNumberLevel];
+            const correctAnswer = String(challenge.number);
+            
+            // Lock input immediately when checking
+            numbersInputLocked = true;
+            
+            if (currentInput === correctAnswer) {
+                // Correct!
+                const slots = document.querySelectorAll('.digit-slot');
+                slots.forEach(slot => {
+                    slot.classList.add('correct');
+                });
+                
+                const card = document.getElementById('numbersCard');
+                card.classList.add('anim-pulse-success');
+                setTimeout(() => card.classList.remove('anim-pulse-success'), 600);
+                
+                document.getElementById('numbersMessage').innerText = 'Correct! 🎉';
+                document.getElementById('numbersMessage').className = 'numbers-message success';
+                
+                // Move to next level after delay
+                setTimeout(() => {
+                    if (currentNumberLevel < 6) {
+                        currentNumberLevel++;
+                        renderNumbersLevel();
+                        numbersInputLocked = false; // Unlock for next level
+                        document.getElementById('numberInput').focus();
+                        setTimeout(() => playNumberAudio(), 300);
+                    } else {
+                        // Won the game!
+                        showNumbersVictory();
+                    }
+                }, 1000);
+                
+            } else {
+                // Wrong - show which digits were wrong, then reset
+                const slots = document.querySelectorAll('.digit-slot');
+                slots.forEach((slot, i) => {
+                    if (currentInput[i] === correctAnswer[i]) {
+                        slot.classList.add('correct');
+                    } else {
+                        slot.classList.add('wrong');
+                    }
+                });
+                
+                const card = document.getElementById('numbersCard');
+                card.classList.add('anim-shake');
+                setTimeout(() => card.classList.remove('anim-shake'), 500);
+                
+                document.getElementById('numbersMessage').innerText = `Wrong! The answer was ${challenge.number.toLocaleString()}. Restarting...`;
+                document.getElementById('numbersMessage').className = 'numbers-message error';
+                
+                // Reset to level 1 with new numbers after delay (input stays locked)
+                setTimeout(async () => {
+                    await generateNumbersChallenges();
+                    currentNumberLevel = 0;
+                    renderNumbersLevel();
+                    numbersInputLocked = false; // Unlock after reset
+                    document.getElementById('numberInput').focus();
+                    setTimeout(() => playNumberAudio(), 300);
+                }, 2000);
+            }
+        }
+
+        function showNumbersVictory() {
+            document.getElementById('numbersCard').style.display = 'none';
+            document.getElementById('numbersVictory').style.display = 'flex';
+        }
+
+        function restartNumbersGame() {
+            startNumbersGame();
+        }
+
+        function exitNumbersGame() {
+            numbersGameActive = false;
+            document.getElementById('numbersContainer').style.display = 'none';
+            document.getElementById('categoryMenu').style.display = 'flex';
+        }
+
+        // Handle keyboard input for numbers game AND flashcards
+        document.addEventListener('keydown', (e) => {
+            // Numbers game input
+            if (numbersGameActive && document.getElementById('numbersCard').style.display !== 'none') {
+                // Block all input if locked (during transitions)
+                if (numbersInputLocked) {
+                    e.preventDefault();
+                    return;
+                }
+                
+                if (e.key >= '0' && e.key <= '9') {
+                    e.preventDefault(); // Prevent the hidden input from also receiving this
+                    const challenge = numbersChallenges[currentNumberLevel];
+                    const expectedLength = String(challenge.number).length;
+                    
+                    if (currentInput.length < expectedLength) {
+                        currentInput += e.key;
+                        updateDigitDisplay();
+                        
+                        // Check if complete
+                        if (currentInput.length === expectedLength) {
+                            checkNumberAnswer();
+                        }
+                    }
+                } else if (e.key === 'Backspace') {
+                    e.preventDefault(); // Prevent the hidden input from also receiving this
+                    currentInput = currentInput.slice(0, -1);
+                    updateDigitDisplay();
+                } else if (e.key === ' ') {
+                    e.preventDefault();
+                    playNumberAudio();
+                }
+                return;
+            }
+            
+            // Flashcard game input
+            if (document.getElementById('gameContainer').style.display === 'flex') {
+                if (!isFlipped && !isAnimating && e.code === 'Space') flipCard();
+                if (isFlipped && !isAnimating) {
+                    if (e.code === 'ArrowLeft') handleResult(false);
+                    if (e.code === 'ArrowRight') handleResult(true);
+                }
+            }
+        });
+
+        // Handle mobile input for numbers game (touch keyboards don't trigger keydown reliably)
+        document.getElementById('numberInput').addEventListener('input', (e) => {
+            if (!numbersGameActive || numbersInputLocked) {
+                e.target.value = currentInput; // Reset to current state if locked
+                return;
+            }
+            
+            const challenge = numbersChallenges[currentNumberLevel];
+            const expectedLength = String(challenge.number).length;
+            
+            // Filter to only digits and sync with currentInput
+            const newValue = e.target.value.replace(/[^0-9]/g, '');
+            
+            // Only process if this is new input (mobile keyboard)
+            // Skip if currentInput already matches (means keydown already handled it)
+            if (newValue === currentInput) return;
+            
+            currentInput = newValue.slice(0, expectedLength);
+            e.target.value = currentInput;
+            updateDigitDisplay();
+            
+            if (currentInput.length === expectedLength) {
+                checkNumberAnswer();
+            }
+        });
+
+        // Keep focus on input for mobile
+        document.getElementById('numbersCard').addEventListener('click', () => {
+            document.getElementById('numberInput').focus();
+        });
+
+        initApp();
+    </script>
+</body>
+</html>
