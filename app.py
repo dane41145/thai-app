@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, Response, jsonify
-import azure.cognitiveservices.speech as speechsdk
 import csv
 import requests
 import io
@@ -15,9 +14,12 @@ app = Flask(__name__)
 # ==========================================
 # CONFIGURATION
 # ==========================================
-# Use environment variables for sensitive data (set these in Railway)
-AZURE_KEY = os.environ.get('AZURE_KEY', 'your-key-here')
+# Use environment variables for sensitive data (set these in Render)
+AZURE_KEY = os.environ.get('AZURE_KEY')
 AZURE_REGION = os.environ.get('AZURE_REGION', 'southeastasia')
+
+if not AZURE_KEY:
+    print("⚠️ WARNING: AZURE_KEY environment variable not set!")
 
 SOURCES = {
     "vocab": {
@@ -37,6 +39,53 @@ PROGRESS_FILE = "progress.json"
 
 AUDIO_CACHE = {}
 MEMORY_DECKS = {}
+
+# ==========================================
+# AZURE TTS REST API (no SDK needed)
+# ==========================================
+def azure_tts_rest(text, voice, speed=1.0):
+    """
+    Call Azure TTS using REST API instead of SDK.
+    This works on any platform without native library dependencies.
+    """
+    # Get access token
+    token_url = f"https://{AZURE_REGION}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
+    headers = {
+        'Ocp-Apim-Subscription-Key': AZURE_KEY,
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    
+    try:
+        token_response = requests.post(token_url, headers=headers)
+        token_response.raise_for_status()
+        access_token = token_response.text
+    except Exception as e:
+        print(f"Token Error: {e}")
+        return None
+    
+    # Call TTS API
+    tts_url = f"https://{AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
+    
+    ssml = f'''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH">
+        <voice name="{voice}">
+            <prosody rate="{speed}">{text}</prosody>
+        </voice>
+    </speak>'''
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/ssml+xml',
+        'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
+        'User-Agent': 'ThaiLearningApp'
+    }
+    
+    try:
+        response = requests.post(tts_url, headers=headers, data=ssml.encode('utf-8'))
+        response.raise_for_status()
+        return response.content
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        return None
 
 # ==========================================
 # PROGRESS TRACKING
@@ -222,17 +271,10 @@ def speak():
         return Response(AUDIO_CACHE[cache_key], mimetype="audio/mpeg")
 
     try:
-        speech_config = speechsdk.SpeechConfig(subscription=AZURE_KEY, region=AZURE_REGION)
-        speech_config.speech_synthesis_voice_name = "th-TH-PremwadeeNeural"
-        speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3)
-        synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-        
-        ssml_string = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH"><voice name="th-TH-PremwadeeNeural"><prosody rate="{speed}">{text}</prosody></voice></speak>"""
-        result = synthesizer.speak_ssml_async(ssml_string).get()
-
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            AUDIO_CACHE[cache_key] = result.audio_data
-            return Response(result.audio_data, mimetype="audio/mpeg")
+        audio_data = azure_tts_rest(text, "th-TH-PremwadeeNeural", speed)
+        if audio_data:
+            AUDIO_CACHE[cache_key] = audio_data
+            return Response(audio_data, mimetype="audio/mpeg")
     except Exception as e:
         print(f"Audio Error: {e}")
         
@@ -258,17 +300,10 @@ def speak_number():
         return Response(AUDIO_CACHE[cache_key], mimetype="audio/mpeg")
 
     try:
-        speech_config = speechsdk.SpeechConfig(subscription=AZURE_KEY, region=AZURE_REGION)
-        speech_config.speech_synthesis_voice_name = "th-TH-PremwadeeNeural"
-        speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3)
-        synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-        
-        ssml_string = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH"><voice name="th-TH-PremwadeeNeural"><prosody rate="{speed}">{thai_text}</prosody></voice></speak>"""
-        result = synthesizer.speak_ssml_async(ssml_string).get()
-
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            AUDIO_CACHE[cache_key] = result.audio_data
-            return Response(result.audio_data, mimetype="audio/mpeg")
+        audio_data = azure_tts_rest(thai_text, "th-TH-PremwadeeNeural", speed)
+        if audio_data:
+            AUDIO_CACHE[cache_key] = audio_data
+            return Response(audio_data, mimetype="audio/mpeg")
     except Exception as e:
         print(f"Audio Error: {e}")
         
@@ -383,21 +418,8 @@ def clean_english_for_tts(text):
     return text
 
 def generate_audio_bytes(text, voice, speed=0.9):
-    """Generate audio for text and return as bytes."""
-    try:
-        speech_config = speechsdk.SpeechConfig(subscription=AZURE_KEY, region=AZURE_REGION)
-        speech_config.speech_synthesis_voice_name = voice
-        speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3)
-        synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
-        
-        ssml_string = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH"><voice name="{voice}"><prosody rate="{speed}">{text}</prosody></voice></speak>"""
-        result = synthesizer.speak_ssml_async(ssml_string).get()
-        
-        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            return result.audio_data
-    except Exception as e:
-        print(f"Audio generation error: {e}")
-    return None
+    """Generate audio for text and return as bytes using REST API."""
+    return azure_tts_rest(text, voice, speed)
 
 def generate_silence_mp3(duration_ms, sample_rate=16000):
     """Generate silent MP3 using ffmpeg."""
