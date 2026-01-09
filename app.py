@@ -30,7 +30,7 @@ SOURCES = {
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["Script 1", "Script 2", "Script 3", "Script 4", "Script 5"]
+        "tabs": ["LC1", "LC2", "HC1", "HC2", "HC3", "HC4", "HC5", "MC1", "MC2"]
     }
 }
 
