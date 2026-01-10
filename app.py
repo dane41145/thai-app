@@ -24,8 +24,7 @@ if not AZURE_KEY:
 SOURCES = {
     "vocab": {
         "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", 
-                 "Places 1", "Places 2", "Numbers"]
+        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4"]
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
