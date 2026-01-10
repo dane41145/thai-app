@@ -24,13 +24,12 @@ if not AZURE_KEY:
 SOURCES = {
     "vocab": {
         "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", 
-                 "Vocab 6", "Vocab 7", "Vocab 8", "Vocab 9", 
+        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", 
                  "Places 1", "Places 2", "Numbers"]
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["LC1", "LC2", "HC1", "HC2", "HC3", "HC4", "HC5", "MC1", "MC2"]
+        "tabs": ["LC1", "LC2", "NTM1", "NTM2", "NTM3", "NTM4"]
     }
 }
 
