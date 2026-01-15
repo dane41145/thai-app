@@ -124,13 +124,13 @@
         .numbers-victory { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 
         /* LETTERS MODE STYLES */
-        .letter-back-info { text-align: center; }
-        .letter-full-name { font-size: 2.5rem; margin-bottom: 15px; }
-        .letter-class { font-size: 1.1rem; color: #666; margin-bottom: 10px; padding: 5px 15px; background: #e0e0e0; border-radius: 20px; display: inline-block; }
-        .letter-class.HC { background: #ffebee; color: #c62828; }
-        .letter-class.MC { background: #e3f2fd; color: #1565c0; }
-        .letter-class.LC { background: #e8f5e9; color: #2e7d32; }
-        .letter-meaning { font-size: 1.3rem; color: #555; margin-top: 10px; }
+        .letter-back-info { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .letter-full-name { font-size: 4.5rem; margin-bottom: 5px; line-height: 1.1; }
+        .letter-class { font-size: 0.85rem; color: #fff; padding: 4px 12px; border-radius: 15px; display: inline-block; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+        .letter-class.HC { background: #c62828; }
+        .letter-class.MC { background: #1565c0; }
+        .letter-class.LC { background: #2e7d32; }
+        .letter-meaning { font-size: 1.6rem; color: #555; margin-top: 8px; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -659,14 +659,14 @@
                 frontText.innerText = cardData.thai;
                 frontText.className = 'thai-font text-jumbo';
                 
-                // Back: Full name, class, meaning + audio button
-                const classLabel = cardData.letterClass === 'HC' ? 'High Class' : 
-                                   cardData.letterClass === 'MC' ? 'Mid Class' : 'Low Class';
+                // Back: Full name large, class badge small at top, meaning below
+                const classLabel = cardData.letterClass === 'HC' ? 'High' : 
+                                   cardData.letterClass === 'MC' ? 'Mid' : 'Low';
                 
                 backText.innerHTML = `
                     <div class="letter-back-info">
-                        <div class="letter-full-name">${cardData.fullName}</div>
                         <div class="letter-class ${cardData.letterClass}">${classLabel}</div>
+                        <div class="letter-full-name">${cardData.fullName}</div>
                         <div class="letter-meaning">${cardData.meaning}</div>
                     </div>
                 `;
