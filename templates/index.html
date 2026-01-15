@@ -16,8 +16,11 @@
 
         /* MENUS */
         #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
-        .cat-btn { background: white; width: 80%; padding: 30px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.6rem; font-weight: bold; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; align-items: center; gap: 15px; justify-content: center; }
+        .cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 80%; }
+        .cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: bold; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
         .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
+        .cat-btn .emoji { font-size: 2.5rem; }
+        @media (max-width: 400px) { .cat-grid { grid-template-columns: 1fr; } .cat-btn { padding: 30px 20px; } }
 
         #deckMenu { width: 100%; max-width: 900px; display: none; flex-direction: column; gap: 15px; align-items: center; padding: 0 20px; box-sizing: border-box; }
         .deck-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; }
@@ -124,13 +127,13 @@
         .numbers-victory { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 
         /* LETTERS MODE STYLES */
-        .letter-back-info { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-        .letter-full-name { font-size: 4.5rem; margin-bottom: 5px; line-height: 1.1; }
-        .letter-class { font-size: 0.85rem; color: #fff; padding: 4px 12px; border-radius: 15px; display: inline-block; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+        .letter-back-info { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: space-between; height: 280px; padding: 10px 0; }
+        .letter-full-name { font-size: 5rem; line-height: 1.1; }
+        .letter-class { font-size: 0.85rem; color: #fff; padding: 4px 14px; border-radius: 15px; display: inline-block; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
         .letter-class.HC { background: #c62828; }
         .letter-class.MC { background: #1565c0; }
         .letter-class.LC { background: #2e7d32; }
-        .letter-meaning { font-size: 1.6rem; color: #555; margin-top: 8px; font-weight: 500; }
+        .letter-meaning { font-size: 1.8rem; color: #555; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -142,10 +145,12 @@
 
     <div id="categoryMenu">
         <h1 style="color: #444; margin-bottom: 30px;">Choose Mode</h1>
-        <button class="cat-btn" onclick="showDecks('vocab')"> 📖 Vocab </button>
-        <button class="cat-btn" onclick="showDecks('script')"> ✍️ Script </button>
-        <button class="cat-btn" onclick="startLettersMode()"> 🔡 Letters </button>
-        <button class="cat-btn" onclick="startNumbersGame()"> 🔢 Numbers </button>
+        <div class="cat-grid">
+            <button class="cat-btn" onclick="showDecks('vocab')"><span class="emoji">📖</span>Vocab</button>
+            <button class="cat-btn" onclick="showDecks('script')"><span class="emoji">✍️</span>Script</button>
+            <button class="cat-btn" onclick="startLettersMode()"><span class="emoji">🔡</span>Letters</button>
+            <button class="cat-btn" onclick="startNumbersGame()"><span class="emoji">🔢</span>Numbers</button>
+        </div>
     </div>
 
     <div id="deckMenu">
