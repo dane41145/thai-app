@@ -122,6 +122,15 @@
         .numbers-message.success { color: var(--success); }
 
         .numbers-victory { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+
+        /* LETTERS MODE STYLES */
+        .letter-back-info { text-align: center; }
+        .letter-full-name { font-size: 2.5rem; margin-bottom: 15px; }
+        .letter-class { font-size: 1.1rem; color: #666; margin-bottom: 10px; padding: 5px 15px; background: #e0e0e0; border-radius: 20px; display: inline-block; }
+        .letter-class.HC { background: #ffebee; color: #c62828; }
+        .letter-class.MC { background: #e3f2fd; color: #1565c0; }
+        .letter-class.LC { background: #e8f5e9; color: #2e7d32; }
+        .letter-meaning { font-size: 1.3rem; color: #555; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -135,6 +144,7 @@
         <h1 style="color: #444; margin-bottom: 30px;">Choose Mode</h1>
         <button class="cat-btn" onclick="showDecks('vocab')"> 📖 Vocab </button>
         <button class="cat-btn" onclick="showDecks('script')"> ✍️ Script </button>
+        <button class="cat-btn" onclick="startLettersMode()"> 🔡 Letters </button>
         <button class="cat-btn" onclick="startNumbersGame()"> 🔢 Numbers </button>
     </div>
 
@@ -147,7 +157,7 @@
     <div id="gameContainer">
         <div class="controls" id="topControls">
             <button class="home-btn" onclick="goHome()" title="Back to Decks">🏠</button>
-            <div class="mode-toggle">
+            <div class="mode-toggle" id="modeToggle">
                 <button id="btnThai" class="toggle-btn active" onclick="switchMode('thai_front')">🇹🇭 Thai</button>
                 <button id="btnEng" class="toggle-btn" onclick="switchMode('eng_front')">🇬🇧 Eng</button>
             </div>
@@ -238,6 +248,54 @@
         let currentNumberLevel = 0; // 0-6 for levels 1-7
         let numbersChallenges = []; // Array of {number: 123, audioUrl: '...'}
         let currentInput = '';
+
+        // ========== THAI LETTERS DATA (HARDCODED) ==========
+        const THAI_LETTERS = [
+            { letter: "ก", fullName: "ก ไก่", letterClass: "MC", meaning: "chicken" },
+            { letter: "ข", fullName: "ข ไข่", letterClass: "HC", meaning: "egg" },
+            { letter: "ฃ", fullName: "ฃ ขวด", letterClass: "HC", meaning: "bottle (obsolete)" },
+            { letter: "ค", fullName: "ค ควาย", letterClass: "LC", meaning: "buffalo" },
+            { letter: "ฅ", fullName: "ฅ คน", letterClass: "LC", meaning: "person (obsolete)" },
+            { letter: "ฆ", fullName: "ฆ ระฆัง", letterClass: "LC", meaning: "bell" },
+            { letter: "ง", fullName: "ง งู", letterClass: "LC", meaning: "snake" },
+            { letter: "จ", fullName: "จ จาน", letterClass: "MC", meaning: "plate" },
+            { letter: "ฉ", fullName: "ฉ ฉิ่ง", letterClass: "HC", meaning: "cymbals" },
+            { letter: "ช", fullName: "ช ช้าง", letterClass: "LC", meaning: "elephant" },
+            { letter: "ซ", fullName: "ซ โซ่", letterClass: "LC", meaning: "chain" },
+            { letter: "ฌ", fullName: "ฌ เฌอ", letterClass: "LC", meaning: "tree" },
+            { letter: "ญ", fullName: "ญ หญิง", letterClass: "LC", meaning: "woman" },
+            { letter: "ฎ", fullName: "ฎ ชฎา", letterClass: "MC", meaning: "Thai headdress" },
+            { letter: "ฏ", fullName: "ฏ ปฏัก", letterClass: "MC", meaning: "spear" },
+            { letter: "ฐ", fullName: "ฐ ฐาน", letterClass: "HC", meaning: "base / pedestal" },
+            { letter: "ฑ", fullName: "ฑ มณโฑ", letterClass: "LC", meaning: "Montho (character)" },
+            { letter: "ฒ", fullName: "ฒ ผู้เฒ่า", letterClass: "LC", meaning: "old man" },
+            { letter: "ณ", fullName: "ณ เณร", letterClass: "LC", meaning: "novice monk" },
+            { letter: "ด", fullName: "ด เด็ก", letterClass: "MC", meaning: "child" },
+            { letter: "ต", fullName: "ต เต่า", letterClass: "MC", meaning: "turtle" },
+            { letter: "ถ", fullName: "ถ ถุง", letterClass: "HC", meaning: "bag / sack" },
+            { letter: "ท", fullName: "ท ทหาร", letterClass: "LC", meaning: "soldier" },
+            { letter: "ธ", fullName: "ธ ธง", letterClass: "LC", meaning: "flag" },
+            { letter: "น", fullName: "น หนู", letterClass: "LC", meaning: "mouse / rat" },
+            { letter: "บ", fullName: "บ ใบไม้", letterClass: "MC", meaning: "leaf" },
+            { letter: "ป", fullName: "ป ปลา", letterClass: "MC", meaning: "fish" },
+            { letter: "ผ", fullName: "ผ ผึ้ง", letterClass: "HC", meaning: "bee" },
+            { letter: "ฝ", fullName: "ฝ ฝา", letterClass: "HC", meaning: "lid / cover" },
+            { letter: "พ", fullName: "พ พาน", letterClass: "LC", meaning: "tray" },
+            { letter: "ฟ", fullName: "ฟ ฟัน", letterClass: "LC", meaning: "teeth" },
+            { letter: "ภ", fullName: "ภ สำเภา", letterClass: "LC", meaning: "junk (sailing ship)" },
+            { letter: "ม", fullName: "ม ม้า", letterClass: "LC", meaning: "horse" },
+            { letter: "ย", fullName: "ย ยักษ์", letterClass: "LC", meaning: "giant / ogre" },
+            { letter: "ร", fullName: "ร เรือ", letterClass: "LC", meaning: "boat" },
+            { letter: "ล", fullName: "ล ลิง", letterClass: "LC", meaning: "monkey" },
+            { letter: "ว", fullName: "ว แหวน", letterClass: "LC", meaning: "ring" },
+            { letter: "ศ", fullName: "ศ ศาลา", letterClass: "HC", meaning: "pavilion" },
+            { letter: "ษ", fullName: "ษ ฤๅษี", letterClass: "HC", meaning: "hermit" },
+            { letter: "ส", fullName: "ส เสือ", letterClass: "HC", meaning: "tiger" },
+            { letter: "ห", fullName: "ห หีบ", letterClass: "HC", meaning: "chest / box" },
+            { letter: "ฬ", fullName: "ฬ จุฬา", letterClass: "LC", meaning: "kite" },
+            { letter: "อ", fullName: "อ อ่าง", letterClass: "MC", meaning: "basin / tub" },
+            { letter: "ฮ", fullName: "ฮ นกฮูก", letterClass: "LC", meaning: "owl" }
+        ];
 
         async function initApp() {
             try {
@@ -370,6 +428,29 @@
             document.getElementById('categoryMenu').style.display = 'flex';
         }
 
+        // ========== LETTERS MODE ==========
+        function startLettersMode() {
+            currentCategory = 'letters';
+            currentDeckName = 'Thai Letters';
+            currentDeckId = 'letters';
+            
+            fullVocab = THAI_LETTERS.map(l => ({
+                thai: l.letter,
+                fullName: l.fullName,
+                letterClass: l.letterClass,
+                meaning: l.meaning,
+                audio_text: l.fullName  // Use full name for audio (e.g., "ก ไก่")
+            }));
+            
+            // Hide mode toggle for letters (only one mode)
+            document.getElementById('modeToggle').style.display = 'none';
+            document.getElementById('deckTitle').innerText = 'Letters';
+            
+            document.getElementById('categoryMenu').style.display = 'none';
+            document.getElementById('gameContainer').style.display = 'flex';
+            restartRound();
+        }
+
         async function loadDeckData(gid, deckName) {
             showLoading("Downloading Deck...");
             try {
@@ -402,6 +483,9 @@
         }
 
         function startGameUI() {
+            // Show mode toggle for vocab/script
+            document.getElementById('modeToggle').style.display = 'flex';
+            
             document.getElementById('deckMenu').style.display = 'none';
             document.getElementById('gameContainer').style.display = 'flex';
             switchMode('thai_front'); 
@@ -409,7 +493,17 @@
 
         function goHome() {
             document.getElementById('gameContainer').style.display = 'none';
-            document.getElementById('deckMenu').style.display = 'flex';
+            
+            // Show mode toggle again (in case it was hidden for letters)
+            document.getElementById('modeToggle').style.display = 'flex';
+            
+            if (currentCategory === 'letters') {
+                // Go back to main menu for letters
+                document.getElementById('categoryMenu').style.display = 'flex';
+            } else {
+                // Go back to deck selection for vocab/script
+                document.getElementById('deckMenu').style.display = 'flex';
+            }
         }
 
         function switchMode(newMode) {
@@ -558,7 +652,29 @@
                     backBtn.style.display = 'flex';
                 }
             }
+            
+            // === 3. LETTERS LOGIC ===
+            else if (currentCategory === 'letters') {
+                // Front: Just the letter
+                frontText.innerText = cardData.thai;
+                frontText.className = 'thai-font text-jumbo';
+                
+                // Back: Full name, class, meaning + audio button
+                const classLabel = cardData.letterClass === 'HC' ? 'High Class' : 
+                                   cardData.letterClass === 'MC' ? 'Mid Class' : 'Low Class';
+                
+                backText.innerHTML = `
+                    <div class="letter-back-info">
+                        <div class="letter-full-name">${cardData.fullName}</div>
+                        <div class="letter-class ${cardData.letterClass}">${classLabel}</div>
+                        <div class="letter-meaning">${cardData.meaning}</div>
+                    </div>
+                `;
+                backText.className = '';
+                backBtn.style.display = 'flex';
+            }
 
+            // Auto-play audio for Thai front mode in vocab
             if (currentCategory === 'vocab' && currentMode === 'thai_front') playCurrentAudio();
         }
 
@@ -570,8 +686,10 @@
             document.getElementById('topControls').style.visibility = 'hidden';
             document.getElementById('victoryArea').style.display = 'flex';
             
-            // Mark this deck/mode as complete
-            markDeckComplete();
+            // Mark this deck/mode as complete (skip for letters)
+            if (currentCategory !== 'letters') {
+                markDeckComplete();
+            }
         }
 
         async function markDeckComplete() {
@@ -603,7 +721,7 @@
         function playCurrentAudio() {
             if (deck.length === 0) return;
             
-            // USE THE CORRECT AUDIO TEXT (OVERRIDE or THAI)
+            // USE THE CORRECT AUDIO TEXT (OVERRIDE or THAI or FULL NAME for letters)
             const textToSpeak = deck[0].audio_text;
 
             if (audioCache[textToSpeak]) {
