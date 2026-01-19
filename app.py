@@ -28,7 +28,7 @@ SOURCES = {
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "P", "N"]
+        "tabs": ["V1", "V2", "V3", "P", "N"]
     }
 }
 
