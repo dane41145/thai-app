@@ -638,22 +638,34 @@
             // === 2. SCRIPT LOGIC ===
             else if (currentCategory === 'script') {
                 if (currentMode === 'thai_front') {
-                    // Reading Mode
-                    frontText.innerText = cardData.thai;
-                    setSize(frontText, cardData.thai, true);
-                    
-                    backText.innerText = cardData.phonetic;
-                    setSize(backText, cardData.phonetic, false);
-                    backBtn.style.display = 'flex';
-                } else {
-                    // Writing Mode
+                    // Thai Front Mode: Shows transliteration on front, Thai + English on back
+                    // Front: transliteration + audio (autoplay)
                     frontText.innerText = cardData.phonetic;
                     setSize(frontText, cardData.phonetic, false);
-
-                    backText.innerText = cardData.thai;
-                    setSize(backText, cardData.thai, true);
-                    backPhonetic.innerText = `/${cardData.phonetic}/`;
-                    backPhonetic.style.display = 'block';
+                    frontBtn.style.display = 'flex';
+                    
+                    // Back: Thai script + English meaning below
+                    backText.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
+                            <span class="thai-font text-huge">${cardData.thai}</span>
+                            <span class="eng-font text-med" style="color: #666;">${cardData.eng || ''}</span>
+                        </div>
+                    `;
+                    backText.className = '';
+                } else {
+                    // English Front Mode: Shows English on front, Thai + transliteration on back
+                    // Front: English meaning
+                    frontText.innerText = cardData.eng || '';
+                    setSize(frontText, cardData.eng || '', false);
+                    
+                    // Back: Thai script + transliteration + audio
+                    backText.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                            <span class="thai-font text-huge">${cardData.thai}</span>
+                            <span class="phonetic">/${cardData.phonetic}/</span>
+                        </div>
+                    `;
+                    backText.className = '';
                     backBtn.style.display = 'flex';
                 }
             }
@@ -679,8 +691,8 @@
                 backBtn.style.display = 'flex';
             }
 
-            // Auto-play audio for Thai front mode in vocab
-            if (currentCategory === 'vocab' && currentMode === 'thai_front') playCurrentAudio();
+            // Auto-play audio for Thai front mode in vocab and script
+            if ((currentCategory === 'vocab' || currentCategory === 'script') && currentMode === 'thai_front') playCurrentAudio();
         }
 
         function renderCard() { updateCardContent(); }
