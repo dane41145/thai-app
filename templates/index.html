@@ -322,8 +322,21 @@
             }
         }
 
-        function showDecks(category) {
+        async function showDecks(category) {
             currentCategory = category;
+            
+            // Refresh deck and progress data from server
+            try {
+                const [decksResponse, progressResponse] = await Promise.all([
+                    fetch('/decks'),
+                    fetch('/progress')
+                ]);
+                allDecksData = await decksResponse.json();
+                progressData = await progressResponse.json();
+            } catch (err) {
+                console.error('Failed to refresh data:', err);
+            }
+            
             const filtered = allDecksData.filter(d => d.category === category);
             const listArea = document.getElementById('deckListArea');
             listArea.innerHTML = '';
