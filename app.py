@@ -17,9 +17,12 @@ app = Flask(__name__)
 # Use environment variables for sensitive data (set these in Render)
 AZURE_KEY = os.environ.get('AZURE_KEY')
 AZURE_REGION = os.environ.get('AZURE_REGION', 'southeastasia')
+GEMINI_KEY = os.environ.get('GEMINI_KEY')
 
 if not AZURE_KEY:
     print("⚠️ WARNING: AZURE_KEY environment variable not set!")
+if not GEMINI_KEY:
+    print("⚠️ WARNING: GEMINI_KEY environment variable not set!")
 
 SOURCES = {
     "vocab": {
@@ -267,6 +270,90 @@ def get_decks():
 def get_vocab(deck_id):
     deck = MEMORY_DECKS.get(deck_id)
     return jsonify(deck['words'] if deck else [])
+
+@app.route('/generate_sentences', methods=['POST'])
+def generate_sentences():
+    """
+    Generate Thai sentences using only words from the wordbank.
+    Uses Gemini API to create natural sentences.
+    """
+    if not GEMINI_KEY:
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+    
+    # Collect all vocab words into wordbank
+    wordbank = []
+    for deck_id, deck_data in MEMORY_DECKS.items():
+        if deck_data['category'] == 'vocab':
+            for word in deck_data['words']:
+                wordbank.append({
+                    'thai': word['thai'],
+                    'english': word['eng'],
+                    'phonetic': word.get('phonetic', '')
+                })
+    
+    if not wordbank:
+        return jsonify({'error': 'No words in wordbank'}), 400
+    
+    # Create a compact word list for the prompt
+    word_list = [f"{w['thai']} ({w['english']})" for w in wordbank]
+    word_list_text = ", ".join(word_list)
+    
+    # Call Gemini API
+    prompt = f"""You are a Thai language teacher. Create exactly 10 simple, natural Thai sentences for a beginner student.
+
+CRITICAL RULES:
+1. Use ONLY words from this wordbank - no other Thai words allowed: {word_list_text}
+2. Each sentence should be 3-6 words long
+3. Sentences should be practical and natural
+4. Separate Thai words with spaces
+5. Include subject pronouns when natural
+
+Respond in this exact JSON format (no other text):
+[
+  {{"thai": "ผม กิน ข้าว", "english": "I eat rice"}},
+  {{"thai": "เธอ ชอบ กาแฟ", "english": "She likes coffee"}}
+]
+
+Generate 10 sentences now:"""
+
+    try:
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        
+        response = requests.post(gemini_url, json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 2048
+            }
+        }, timeout=30)
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract the generated text
+        generated_text = result['candidates'][0]['content']['parts'][0]['text']
+        
+        # Parse JSON from response (handle markdown code blocks)
+        import re
+        json_match = re.search(r'\[.*\]', generated_text, re.DOTALL)
+        if json_match:
+            sentences = json.loads(json_match.group())
+        else:
+            return jsonify({'error': 'Could not parse Gemini response'}), 500
+        
+        # Add audio_text field for TTS
+        for sentence in sentences:
+            # Remove spaces for audio (Thai TTS handles it better without spaces)
+            sentence['audio_text'] = sentence['thai'].replace(' ', '')
+        
+        print(f"✅ Generated {len(sentences)} sentences")
+        return jsonify(sentences)
+        
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Gemini API timeout'}), 504
+    except Exception as e:
+        print(f"❌ Gemini API error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/speak', methods=['POST'])
 def speak():
