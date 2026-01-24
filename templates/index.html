@@ -134,6 +134,16 @@
         .letter-class.MC { background: #1565c0; }
         .letter-class.LC { background: #2e7d32; }
         .letter-meaning { font-size: 2.2rem; color: #444; font-weight: 500; }
+        
+        /* CLASS MODE STYLES */
+        .letter-back-class-mode { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 280px; gap: 30px; }
+        .letter-class-big { font-size: 3rem; color: #fff; padding: 15px 40px; border-radius: 25px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+        .letter-class-big.HC { background: #c62828; }
+        .letter-class-big.MC { background: #1565c0; }
+        .letter-class-big.LC { background: #2e7d32; }
+        .letter-small-info { display: flex; flex-direction: column; align-items: center; gap: 5px; opacity: 0.7; }
+        .letter-small-name { font-size: 1.5rem; color: #555; }
+        .letter-small-meaning { font-size: 1.1rem; color: #777; }
     </style>
 </head>
 <body>
@@ -460,13 +470,15 @@
                 audio_text: l.fullName  // Use full name for audio (e.g., "ก ไก่")
             }));
             
-            // Hide mode toggle for letters (only one mode)
-            document.getElementById('modeToggle').style.display = 'none';
+            // Show mode toggle with Letters-specific labels
+            document.getElementById('modeToggle').style.display = 'flex';
+            document.getElementById('btnThai').innerText = '📖 Info';
+            document.getElementById('btnEng').innerText = '🎯 Class';
             document.getElementById('deckTitle').innerText = 'Letters';
             
             document.getElementById('categoryMenu').style.display = 'none';
             document.getElementById('gameContainer').style.display = 'flex';
-            restartRound();
+            switchMode('thai_front');
         }
 
         async function loadDeckData(gid, deckName) {
@@ -512,8 +524,10 @@
         function goHome() {
             document.getElementById('gameContainer').style.display = 'none';
             
-            // Show mode toggle again (in case it was hidden for letters)
+            // Reset mode toggle labels back to default
             document.getElementById('modeToggle').style.display = 'flex';
+            document.getElementById('btnThai').innerText = '🇹🇭 Thai';
+            document.getElementById('btnEng').innerText = '🇬🇧 Eng';
             
             if (currentCategory === 'letters') {
                 // Go back to main menu for letters
@@ -685,21 +699,34 @@
             
             // === 3. LETTERS LOGIC ===
             else if (currentCategory === 'letters') {
-                // Front: Just the letter
+                // Front: Just the letter (same for both modes)
                 frontText.innerText = cardData.thai;
                 frontText.className = 'thai-font text-jumbo';
                 
-                // Back: Full name large, class badge small at top, meaning below
                 const classLabel = cardData.letterClass === 'HC' ? 'High' : 
                                    cardData.letterClass === 'MC' ? 'Mid' : 'Low';
                 
-                backText.innerHTML = `
-                    <div class="letter-back-info">
-                        <div class="letter-class ${cardData.letterClass}">${classLabel}</div>
-                        <div class="letter-full-name">${cardData.fullName}</div>
-                        <div class="letter-meaning">${cardData.meaning}</div>
-                    </div>
-                `;
+                if (currentMode === 'thai_front') {
+                    // INFO MODE: Full name prominent, class badge small at top
+                    backText.innerHTML = `
+                        <div class="letter-back-info">
+                            <div class="letter-class ${cardData.letterClass}">${classLabel}</div>
+                            <div class="letter-full-name">${cardData.fullName}</div>
+                            <div class="letter-meaning">${cardData.meaning}</div>
+                        </div>
+                    `;
+                } else {
+                    // CLASS MODE: Class label big and centered, other info smaller
+                    backText.innerHTML = `
+                        <div class="letter-back-class-mode">
+                            <div class="letter-class-big ${cardData.letterClass}">${classLabel}</div>
+                            <div class="letter-small-info">
+                                <span class="letter-small-name">${cardData.fullName}</span>
+                                <span class="letter-small-meaning">${cardData.meaning}</span>
+                            </div>
+                        </div>
+                    `;
+                }
                 backText.className = '';
                 backBtn.style.display = 'flex';
             }
