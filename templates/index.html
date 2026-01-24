@@ -160,6 +160,7 @@
             <button class="cat-btn" onclick="showDecks('script')"><span class="emoji">✍️</span>Script</button>
             <button class="cat-btn" onclick="startLettersMode()"><span class="emoji">🔡</span>Letters</button>
             <button class="cat-btn" onclick="startNumbersGame()"><span class="emoji">🔢</span>Numbers</button>
+            <button class="cat-btn" onclick="startSpeakingMode()"><span class="emoji">💬</span>Speaking</button>
         </div>
     </div>
 
@@ -481,6 +482,73 @@
             switchMode('thai_front');
         }
 
+        async function startSpeakingMode() {
+            currentCategory = 'speaking';
+            currentDeckName = 'Speaking Practice';
+            currentDeckId = 'speaking';
+            
+            // Show loading while generating sentences
+            showLoading('Generating sentences with AI... This may take a moment.');
+            
+            try {
+                const response = await fetch('/generate_sentences', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to generate sentences');
+                }
+                
+                const sentences = await response.json();
+                
+                if (!sentences || sentences.length === 0) {
+                    throw new Error('No sentences generated');
+                }
+                
+                // Convert to flashcard format
+                fullVocab = sentences.map(s => ({
+                    thai: s.thai,
+                    eng: s.english,
+                    audio_text: s.audio_text
+                }));
+                
+                hideLoading();
+                
+                // Hide mode toggle for speaking (only one mode)
+                document.getElementById('modeToggle').style.display = 'none';
+                document.getElementById('deckTitle').innerText = 'Speaking';
+                
+                document.getElementById('categoryMenu').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'flex';
+                
+                // Start without shuffling (sentences are already randomized by AI)
+                deck = [...fullVocab];
+                document.getElementById('victoryArea').style.display = 'none';
+                document.getElementById('gameArea').style.display = 'block';
+                document.getElementById('actionArea').style.display = 'flex';
+                document.getElementById('actionArea').classList.remove('visible');
+                document.getElementById('topControls').style.visibility = 'visible';
+                
+                const moverEl = document.getElementById('cardMover');
+                moverEl.classList.remove('anim-slide-right', 'anim-slide-left', 'anim-pop-in');
+                
+                isFlipped = false;
+                isAnimating = false;
+                const cardEl = document.getElementById('flashcard');
+                cardEl.classList.remove('is-flipped');
+                cardEl.style.transition = 'none';
+                renderCard();
+                setTimeout(() => { cardEl.style.transition = 'transform 0.6s'; }, 50);
+                
+            } catch (err) {
+                hideLoading();
+                alert('Failed to generate sentences: ' + err.message);
+                console.error('Speaking mode error:', err);
+            }
+        }
+
         async function loadDeckData(gid, deckName) {
             showLoading("Downloading Deck...");
             try {
@@ -529,8 +597,8 @@
             document.getElementById('btnThai').innerText = '🇹🇭 Thai';
             document.getElementById('btnEng').innerText = '🇬🇧 Eng';
             
-            if (currentCategory === 'letters') {
-                // Go back to main menu for letters
+            if (currentCategory === 'letters' || currentCategory === 'speaking') {
+                // Go back to main menu for letters and speaking
                 document.getElementById('categoryMenu').style.display = 'flex';
             } else {
                 // Go back to deck selection for vocab/script - refresh to show updated progress
@@ -730,6 +798,23 @@
                 backText.className = '';
                 backBtn.style.display = 'flex';
             }
+            
+            // === 4. SPEAKING LOGIC ===
+            else if (currentCategory === 'speaking') {
+                // Front: English sentence
+                frontText.innerText = cardData.eng;
+                setSize(frontText, cardData.eng, false);
+                
+                // Back: Thai sentence (with spaces) + audio button (no auto-play)
+                backText.innerText = cardData.thai;
+                backText.className = 'thai-font';
+                // Size based on length
+                if (cardData.thai.length <= 15) backText.classList.add('text-large');
+                else if (cardData.thai.length <= 25) backText.classList.add('text-med');
+                else backText.classList.add('text-med');
+                
+                backBtn.style.display = 'flex';
+            }
 
             // Auto-play audio for Thai front mode in vocab and script
             if ((currentCategory === 'vocab' || currentCategory === 'script') && currentMode === 'thai_front') playCurrentAudio();
@@ -743,8 +828,8 @@
             document.getElementById('topControls').style.visibility = 'hidden';
             document.getElementById('victoryArea').style.display = 'flex';
             
-            // Mark this deck/mode as complete (skip for letters)
-            if (currentCategory !== 'letters') {
+            // Mark this deck/mode as complete (skip for letters and speaking)
+            if (currentCategory !== 'letters' && currentCategory !== 'speaking') {
                 markDeckComplete();
             }
         }
