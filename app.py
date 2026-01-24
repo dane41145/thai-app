@@ -23,12 +23,24 @@ if not AZURE_KEY:
 
 SOURCES = {
     "vocab": {
-        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8"
+        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
+        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
     },
     "script": {
-        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og"
+        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
+        "tabs": ["V1", "V2", "V3", "P", "N"]
     }
 }
+
+# Load from config.json if it exists (overrides the defaults above)
+CONFIG_FILE = "config.json"
+if os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            SOURCES = json.load(f)
+        print(f"✅ Loaded config from {CONFIG_FILE}")
+    except Exception as e:
+        print(f"⚠️ Could not load {CONFIG_FILE}, using defaults: {e}")
 
 PROGRESS_FILE = "progress.json"
 # ==========================================
@@ -171,61 +183,6 @@ def number_to_thai_under_million(n):
 # ==========================================
 # DECK LOADING
 # ==========================================
-def get_sheet_tabs(sheet_id):
-    """
-    Fetch all tab names from a Google Sheet.
-    Tries multiple methods for reliability.
-    Excludes tabs starting with '_' (e.g., '_Draft', '_Test').
-    """
-    import re
-    import json
-    
-    # Method 1: Try the public worksheets feed (works for published sheets)
-    try:
-        feed_url = f"https://spreadsheets.google.com/feeds/worksheets/{sheet_id}/public/basic?alt=json"
-        response = requests.get(feed_url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            tabs = []
-            for entry in data.get('feed', {}).get('entry', []):
-                title = entry.get('title', {}).get('$t', '')
-                if title and not title.startswith('_'):
-                    tabs.append(title)
-            if tabs:
-                print(f"      ✅ Found tabs via feed API: {tabs}")
-                return tabs
-    except Exception as e:
-        print(f"      ⚠️ Feed API failed: {e}")
-    
-    # Method 2: Parse the HTML from the spreadsheet page
-    try:
-        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit?usp=sharing"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        html = response.text
-        
-        # Pattern to find sheet names in Google's JavaScript
-        # Google embeds sheet info in a specific format
-        pattern = r'\[(?:null,){2,3}"([^"]+)"'
-        matches = re.findall(pattern, html)
-        
-        tabs = []
-        seen = set()
-        for match in matches:
-            if match and not match.startswith('_') and match not in seen:
-                if len(match) < 100:
-                    tabs.append(match)
-                    seen.add(match)
-        
-        if tabs:
-            print(f"      ✅ Found tabs via HTML parsing: {tabs}")
-            return tabs
-    except Exception as e:
-        print(f"      ⚠️ HTML parsing failed: {e}")
-    
-    print(f"      ❌ Could not auto-discover tabs")
-    return []
-
 def load_all_decks():
     print("📥 Loading all decks...")
     global MEMORY_DECKS
@@ -233,11 +190,8 @@ def load_all_decks():
 
     for category, config in SOURCES.items():
         sheet_id = config['sheet_id']
+        tabs = config['tabs']
         print(f"   👉 Processing category: {category.upper()}")
-        
-        # Auto-discover tabs from the sheet
-        tabs = get_sheet_tabs(sheet_id)
-        print(f"      📋 Found {len(tabs)} tabs: {tabs}")
 
         for tab_name in tabs:
             encoded_name = urllib.parse.quote(tab_name)
