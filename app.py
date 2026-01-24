@@ -23,12 +23,10 @@ if not AZURE_KEY:
 
 SOURCES = {
     "vocab": {
-        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
+        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8"
     },
     "script": {
-        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["V1", "V2", "V3", "P", "N"]
+        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og"
     }
 }
 
@@ -173,6 +171,47 @@ def number_to_thai_under_million(n):
 # ==========================================
 # DECK LOADING
 # ==========================================
+def get_sheet_tabs(sheet_id):
+    """
+    Fetch all tab names from a Google Sheet.
+    Uses the spreadsheet's HTML page to extract tab names.
+    Excludes tabs starting with '_' (e.g., '_Draft', '_Test').
+    """
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        html = response.text
+        
+        # Extract tab names from the HTML
+        # Google Sheets includes tab info in a specific format
+        import re
+        
+        # Look for the sheet names in the HTML - they appear in a specific pattern
+        # This pattern finds sheet names in the Google Sheets HTML structure
+        pattern = r'"name":"([^"]+)"'
+        matches = re.findall(pattern, html)
+        
+        # Filter out system/internal names and tabs starting with '_'
+        tabs = []
+        seen = set()
+        for match in matches:
+            # Skip if starts with underscore or is a duplicate
+            if match.startswith('_'):
+                continue
+            # Skip common non-tab matches
+            if match in seen or len(match) > 50 or match in ['name', 'sheets', 'properties']:
+                continue
+            # Basic validation - tab names shouldn't have certain characters
+            if '\\' not in match and match.strip():
+                tabs.append(match)
+                seen.add(match)
+        
+        return tabs
+    except Exception as e:
+        print(f"      ❌ Error fetching tabs: {e}")
+        return []
+
 def load_all_decks():
     print("📥 Loading all decks...")
     global MEMORY_DECKS
@@ -180,8 +219,11 @@ def load_all_decks():
 
     for category, config in SOURCES.items():
         sheet_id = config['sheet_id']
-        tabs = config['tabs']
         print(f"   👉 Processing category: {category.upper()}")
+        
+        # Auto-discover tabs from the sheet
+        tabs = get_sheet_tabs(sheet_id)
+        print(f"      📋 Found {len(tabs)} tabs: {tabs}")
 
         for tab_name in tabs:
             encoded_name = urllib.parse.quote(tab_name)
