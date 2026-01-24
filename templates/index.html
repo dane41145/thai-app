@@ -81,6 +81,7 @@
         .text-huge { font-size: 5rem; }
         .text-large { font-size: 3.5rem; }
         .text-med { font-size: 2.2rem; }
+        .text-small { font-size: 1.6rem; }
 
         .audio-btn { margin-top: 30px; background: var(--primary); color: white; border: none; width: 60px; height: 60px; border-radius: 50%; font-size: 24px; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,120,212, 0.3); }
         .audio-btn:active { transform: scale(0.95); }
@@ -808,10 +809,12 @@
                 // Back: Thai sentence (with spaces) + audio button (no auto-play)
                 backText.innerText = cardData.thai;
                 backText.className = 'thai-font';
-                // Size based on length
-                if (cardData.thai.length <= 15) backText.classList.add('text-large');
-                else if (cardData.thai.length <= 25) backText.classList.add('text-med');
-                else backText.classList.add('text-med');
+                // Size based on length - bigger and scales down for longer sentences
+                const len = cardData.thai.length;
+                if (len <= 10) backText.classList.add('text-huge');
+                else if (len <= 18) backText.classList.add('text-large');
+                else if (len <= 30) backText.classList.add('text-med');
+                else backText.classList.add('text-small');
                 
                 backBtn.style.display = 'flex';
             }
