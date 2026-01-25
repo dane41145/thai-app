@@ -515,27 +515,32 @@ function updateCardContent() {
             frontText.className = 'phonetic';
             frontText.style.position = 'static';
             frontText.style.fontSize = 'clamp(1.8rem, 8vw, 3rem)';
+            frontText.style.color = '#333'; // Black for main text on front
             frontBtn.style.display = 'flex';
             
-            // Back: Thai script centered, English at bottom (like vocab phonetic)
+            // Back: Thai script centered (accounting for bottom text), English at bottom
             backText.innerText = cardData.thai;
             setSize(backText, cardData.thai, true);
+            backText.style.marginBottom = '60px'; // Push up to account for bottom text
             // Use backPhonetic div for English translation at bottom
             backPhonetic.innerText = cardData.eng || '';
             backPhonetic.style.display = 'block';
             backPhonetic.className = 'phonetic';
+            backPhonetic.style.fontSize = '1.6rem'; // Bigger translation text
         } else {
             // English Front Mode: Shows English on front, Thai + transliteration on back
             // Front: English meaning
             frontText.innerText = cardData.eng || '';
             setSize(frontText, cardData.eng || '', false);
             
-            // Back: Thai script centered, transliteration at bottom
+            // Back: Thai script centered (accounting for bottom text), transliteration at bottom
             backText.innerText = cardData.thai;
             setSize(backText, cardData.thai, true);
+            backText.style.marginBottom = '60px'; // Push up to account for bottom text
             backPhonetic.innerText = `/${cardData.phonetic}/`;
             backPhonetic.style.display = 'block';
             backPhonetic.className = 'phonetic';
+            backPhonetic.style.fontSize = '1.6rem'; // Bigger transliteration text
             backBtn.style.display = 'flex';
         }
     }
