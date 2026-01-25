@@ -537,7 +537,7 @@ def concatenate_mp3_files(mp3_bytes_list):
         file_paths = []
         
         for i, mp3_bytes in enumerate(mp3_bytes_list):
-            if mp3_bytes:
+            if mp3_bytes and len(mp3_bytes) > 0:
                 file_path = os.path.join(tmpdir, f'part_{i:04d}.mp3')
                 with open(file_path, 'wb') as f:
                     f.write(mp3_bytes)
@@ -551,18 +551,24 @@ def concatenate_mp3_files(mp3_bytes_list):
             for path in file_paths:
                 f.write(f"file '{path}'\n")
         
-        # Concatenate using ffmpeg
+        # Concatenate using ffmpeg - re-encode to ensure consistent format
         output_path = os.path.join(tmpdir, 'output.mp3')
         try:
-            subprocess.run([
-                'ffmpeg', '-f', 'concat', '-safe', '0', '-i', file_list_path,
-                '-c', 'copy', output_path
-            ], capture_output=True, check=True)
+            result = subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', file_list_path,
+                '-acodec', 'libmp3lame', '-ar', '16000', '-ab', '32k', '-ac', '1',
+                output_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"FFmpeg error: {result.stderr}")
+                return b''
             
             with open(output_path, 'rb') as f:
                 return f.read()
         except Exception as e:
             print(f"Concatenation error: {e}")
+            return b''
             return b''
 
 @app.route('/download_deck/<deck_id>')
