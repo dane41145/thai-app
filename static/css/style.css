@@ -69,7 +69,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-width: 100%; overflow-wrap: break-word; padding: 0 5px; }
 .thai-font { font-family: 'Mali', sans-serif; font-weight: 200; }
 .eng-font { font-family: 'Lexend', sans-serif; font-weight: 200; color: #444; }
-.phonetic { font-family: 'Noto Sans', sans-serif; font-size: 1.3rem; color: #888; margin-top: 15px; font-weight: 300; flex-shrink: 0; }
+.phonetic { font-family: 'Gentium Plus', Georgia, serif; font-size: 1.4rem; color: #888; margin-top: 15px; font-weight: 400; flex-shrink: 0; }
 .text-jumbo { font-size: clamp(4rem, 15vw, 12rem); line-height: 1; }
 .text-huge { font-size: clamp(3rem, 12vw, 8rem); line-height: 1; }
 .text-large { font-size: clamp(2.5rem, 10vw, 5rem); line-height: 1.1; }
