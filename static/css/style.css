@@ -1,5 +1,5 @@
 :root { --primary: #0078d4; --success: #107c10; --warning: #d83b01; --bg: #f0f2f5; --text: #333; }
-body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 300; background-color: var(--bg); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-top: 40px; overflow-x: hidden; }
+body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 200; background-color: var(--bg); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding-top: 40px; overflow-x: hidden; }
 
 /* LOADING */
 #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.5s; }
@@ -10,7 +10,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 /* MENUS */
 #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
 .cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 80%; }
-.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: bold; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
+.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: 400; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
 .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
 .cat-btn .emoji { font-size: 2.5rem; }
 @media (max-width: 400px) { .cat-grid { grid-template-columns: 1fr; } .cat-btn { padding: 30px 20px; } }
@@ -20,7 +20,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 .deck-card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; display: flex; flex-direction: row; align-items: center; gap: 10px; border-bottom: 4px solid transparent; }
 .deck-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-bottom-color: var(--primary); }
 .deck-info { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-.deck-title { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+.deck-title { font-size: 1.1rem; font-weight: 400; color: var(--text); }
 .deck-count { background: #eee; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem; color: #666; }
 .deck-progress { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; align-items: flex-end; }
 .deck-progress-row { display: flex; align-items: center; gap: 3px; }
@@ -40,10 +40,10 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 .home-btn { background: #f0f0f0; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; color: #555; }
 .home-btn:hover { background: #e0e0e0; color: #000; }
 .mode-toggle { display: flex; background: #f0f0f0; border-radius: 25px; padding: 4px; gap: 5px; }
-.toggle-btn { border: none; background: transparent; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 600; color: #666; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.toggle-btn { border: none; background: transparent; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 300; color: #666; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
 .toggle-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-.counter-badge { background:#eee; padding: 4px 10px; border-radius: 10px; font-size: 0.9em; font-weight: 600; color: #555; }
-.deck-title-badge { font-size: 0.95em; font-weight: 600; color: #333; }
+.counter-badge { background:#eee; padding: 4px 10px; border-radius: 10px; font-size: 0.9em; font-weight: 300; color: #555; }
+.deck-title-badge { font-size: 0.95em; font-weight: 300; color: #333; }
 
 /* CARD STYLES */
 .card-wrapper { position: relative; width: 340px; height: 460px; perspective: 1000px; }
@@ -81,7 +81,7 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
 
 .action-area { margin-top: 30px; display: flex; gap: 20px; height: 60px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .action-area.visible { opacity: 1; pointer-events: auto; }
-.action-btn { border: none; padding: 0 30px; font-size: 16px; font-weight: 600; border-radius: 30px; cursor: pointer; color: white; display: flex; align-items: center; gap: 10px; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.action-btn { border: none; padding: 0 30px; font-size: 16px; font-weight: 400; border-radius: 30px; cursor: pointer; color: white; display: flex; align-items: center; gap: 10px; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .action-btn:active { transform: scale(0.95); }
 .btn-retry { background-color: var(--warning); }
 .btn-success { background-color: var(--success); }
@@ -123,15 +123,15 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
 /* LETTERS MODE STYLES */
 .letter-back-info { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: space-between; height: 280px; padding: 10px 0; }
 .letter-full-name { font-size: 5rem; line-height: 1.1; }
-.letter-class { font-size: 1.1rem; color: #fff; padding: 6px 18px; border-radius: 20px; display: inline-block; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.letter-class { font-size: 1.1rem; color: #fff; padding: 6px 18px; border-radius: 20px; display: inline-block; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase; }
 .letter-class.HC { background: #c62828; }
 .letter-class.MC { background: #1565c0; }
 .letter-class.LC { background: #2e7d32; }
-.letter-meaning { font-size: 2.2rem; color: #444; font-weight: 500; }
+.letter-meaning { font-size: 2.2rem; color: #444; font-weight: 300; }
 
 /* CLASS MODE STYLES */
 .letter-back-class-mode { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 280px; gap: 30px; }
-.letter-class-big { font-size: 3rem; color: #fff; padding: 15px 40px; border-radius: 25px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.letter-class-big { font-size: 3rem; color: #fff; padding: 15px 40px; border-radius: 25px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
 .letter-class-big.HC { background: #c62828; }
 .letter-class-big.MC { background: #1565c0; }
 .letter-class-big.LC { background: #2e7d32; }
