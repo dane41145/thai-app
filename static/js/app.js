@@ -445,10 +445,13 @@ function updateCardContent() {
 
     function setSize(el, text, isThai) {
         el.className = isThai ? 'thai-font' : 'eng-font';
-        if (isThai && text.length <= 2) el.classList.add('text-jumbo');
-        else if (text.length <= 4) el.classList.add('text-huge');
-        else if (text.length <= 10) el.classList.add('text-large');
-        else el.classList.add('text-med');
+        const len = text.length;
+        // Maximize size - start big and scale down based on length
+        if (len <= 2) el.classList.add('text-jumbo');
+        else if (len <= 5) el.classList.add('text-huge');
+        else if (len <= 12) el.classList.add('text-large');
+        else if (len <= 25) el.classList.add('text-med');
+        else el.classList.add('text-small');
     }
 
     // === 1. VOCAB LOGIC ===
