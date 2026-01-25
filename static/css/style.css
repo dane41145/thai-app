@@ -10,7 +10,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 /* MENUS */
 #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
 .cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 80%; }
-.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: 300; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
+.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.1rem; font-weight: 300; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
 .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
 .cat-btn .emoji { font-size: 2.5rem; }
 @media (max-width: 400px) { .cat-grid { grid-template-columns: 1fr; } .cat-btn { padding: 30px 20px; } }
@@ -76,7 +76,8 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
 .text-med { font-size: clamp(1.8rem, 7vw, 3rem); line-height: 1.2; }
 .text-small { font-size: clamp(1.4rem, 5vw, 2rem); line-height: 1.2; }
 
-.audio-btn { position: absolute; top: 15px; right: 15px; background: var(--primary); color: white; border: none; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,120,212, 0.3); }
+.audio-btn { position: absolute; top: 15px; right: 15px; background: #ddd; color: #666; border: none; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; cursor: pointer; transition: transform 0.1s, background 0.2s; display: flex; align-items: center; justify-content: center; box-shadow: none; }
+.audio-btn:hover { background: #ccc; }
 .audio-btn:active { transform: scale(0.95); }
 
 .action-area { margin-top: 30px; display: flex; gap: 20px; height: 60px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
