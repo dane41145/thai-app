@@ -10,7 +10,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 /* MENUS */
 #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
 .cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 80%; }
-.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.1rem; font-weight: 300; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
+.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-family: 'Lexend', sans-serif; font-size: 1.1rem; font-weight: 300; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
 .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
 .cat-btn .emoji { font-size: 2.5rem; }
 @media (max-width: 400px) { .cat-grid { grid-template-columns: 1fr; } .cat-btn { padding: 30px 20px; } }
