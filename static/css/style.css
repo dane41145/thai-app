@@ -10,7 +10,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 /* MENUS */
 #categoryMenu { width: 100%; max-width: 600px; display: none; flex-direction: column; gap: 20px; align-items: center; }
 .cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; width: 80%; }
-.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: 400; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
+.cat-btn { background: white; width: 100%; padding: 40px 20px; border-radius: 20px; border: 2px solid transparent; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; font-size: 1.4rem; font-weight: 300; color: var(--text); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; justify-content: center; }
 .cat-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-color: var(--primary); color: var(--primary); }
 .cat-btn .emoji { font-size: 2.5rem; }
 @media (max-width: 400px) { .cat-grid { grid-template-columns: 1fr; } .cat-btn { padding: 30px 20px; } }
@@ -20,7 +20,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 .deck-card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; display: flex; flex-direction: row; align-items: center; gap: 10px; border-bottom: 4px solid transparent; }
 .deck-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); border-bottom-color: var(--primary); }
 .deck-info { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-.deck-title { font-size: 1.1rem; font-weight: 400; color: var(--text); }
+.deck-title { font-size: 1.1rem; font-weight: 300; color: var(--text); }
 .deck-count { background: #eee; padding: 3px 10px; border-radius: 15px; font-size: 0.8rem; color: #666; }
 .deck-progress { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; align-items: flex-end; }
 .deck-progress-row { display: flex; align-items: center; gap: 3px; }
@@ -31,7 +31,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 .deck-reset-btn:hover, .deck-download-btn:hover { opacity: 1; }
 @media (max-width: 600px) { .deck-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 400px) { .deck-grid { grid-template-columns: 1fr; } }
-.back-nav-btn { background: none; border: none; color: #666; font-size: 1rem; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; align-self: flex-start; }
+.back-nav-btn { background: none; border: none; color: #666; font-size: 1rem; font-weight: 200; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; align-self: flex-start; }
 .back-nav-btn:hover { color: var(--primary); }
 
 /* GAME UI */
@@ -40,10 +40,10 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 .home-btn { background: #f0f0f0; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; color: #555; }
 .home-btn:hover { background: #e0e0e0; color: #000; }
 .mode-toggle { display: flex; background: #f0f0f0; border-radius: 25px; padding: 4px; gap: 5px; }
-.toggle-btn { border: none; background: transparent; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 300; color: #666; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.toggle-btn { border: none; background: transparent; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 200; color: #666; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
 .toggle-btn.active { background: white; color: var(--primary); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-.counter-badge { background:#eee; padding: 4px 10px; border-radius: 10px; font-size: 0.9em; font-weight: 300; color: #555; }
-.deck-title-badge { font-size: 0.95em; font-weight: 300; color: #333; }
+.counter-badge { background:#eee; padding: 4px 10px; border-radius: 10px; font-size: 0.9em; font-weight: 200; color: #555; }
+.deck-title-badge { font-size: 0.95em; font-weight: 200; color: #333; }
 
 /* CARD STYLES */
 .card-wrapper { position: relative; width: 340px; height: 460px; perspective: 1000px; }
@@ -69,7 +69,7 @@ body { font-family: 'Lexend', -apple-system, BlinkMacSystemFont, "Segoe UI", Rob
 h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-width: 100%; overflow-wrap: break-word; padding: 0 5px; }
 .thai-font { font-family: 'Mali', sans-serif; font-weight: 200; }
 .eng-font { font-family: 'Lexend', sans-serif; font-weight: 200; color: #444; }
-.phonetic { font-family: 'M PLUS 1p', sans-serif; font-size: 1.3rem; color: #888; margin-top: 15px; font-weight: 100; flex-shrink: 0; }
+.phonetic { font-family: 'Noto Sans', sans-serif; font-size: 1.3rem; color: #888; margin-top: 15px; font-weight: 300; flex-shrink: 0; }
 .text-jumbo { font-size: clamp(4rem, 15vw, 12rem); line-height: 1; }
 .text-huge { font-size: clamp(3rem, 12vw, 8rem); line-height: 1; }
 .text-large { font-size: clamp(2.5rem, 10vw, 5rem); line-height: 1.1; }
@@ -81,7 +81,7 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
 
 .action-area { margin-top: 30px; display: flex; gap: 20px; height: 60px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
 .action-area.visible { opacity: 1; pointer-events: auto; }
-.action-btn { border: none; padding: 0 30px; font-size: 16px; font-weight: 400; border-radius: 30px; cursor: pointer; color: white; display: flex; align-items: center; gap: 10px; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.action-btn { border: none; padding: 0 30px; font-size: 16px; font-weight: 300; border-radius: 30px; cursor: pointer; color: white; display: flex; align-items: center; gap: 10px; transition: transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .action-btn:active { transform: scale(0.95); }
 .btn-retry { background-color: var(--warning); }
 .btn-success { background-color: var(--success); }
