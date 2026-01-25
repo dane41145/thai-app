@@ -446,19 +446,32 @@ function updateCardContent() {
     function setSize(el, text, isThai) {
         el.className = isThai ? 'thai-font' : 'eng-font';
         const len = text.length;
+        
         if (isThai) {
-            // Thai text - maximize size aggressively
-            if (len <= 2) el.classList.add('text-jumbo');
-            else if (len <= 4) el.classList.add('text-huge');
-            else if (len <= 8) el.classList.add('text-large');
-            else if (len <= 15) el.classList.add('text-med');
-            else el.classList.add('text-small');
-        } else {
-            // English text - slightly smaller thresholds
-            if (len <= 3) el.classList.add('text-huge');
-            else if (len <= 8) el.classList.add('text-large');
+            // Thai text - based on character count
+            if (len <= 3) el.classList.add('text-jumbo');
+            else if (len <= 6) el.classList.add('text-huge');
+            else if (len <= 10) el.classList.add('text-large');
             else if (len <= 18) el.classList.add('text-med');
             else el.classList.add('text-small');
+        } else {
+            // English text - check for long single words that would break badly
+            const hasSpace = text.includes(' ');
+            const longestWord = text.split(/\s+/).reduce((max, word) => word.length > max ? word.length : max, 0);
+            
+            if (!hasSpace) {
+                // Single word - size based on word length to prevent breaking
+                if (len <= 5) el.classList.add('text-huge');
+                else if (len <= 9) el.classList.add('text-large');
+                else if (len <= 14) el.classList.add('text-med');
+                else el.classList.add('text-small');
+            } else {
+                // Phrase with spaces - can wrap at spaces, so be more generous
+                if (len <= 8) el.classList.add('text-huge');
+                else if (len <= 15) el.classList.add('text-large');
+                else if (len <= 25) el.classList.add('text-med');
+                else el.classList.add('text-small');
+            }
         }
     }
 
@@ -497,33 +510,32 @@ function updateCardContent() {
     else if (currentCategory === 'script') {
         if (currentMode === 'thai_front') {
             // Thai Front Mode: Shows transliteration on front, Thai + English on back
-            // Front: transliteration + audio (autoplay)
-            frontText.innerText = cardData.phonetic;
-            setSize(frontText, cardData.phonetic, false);
+            // Front: transliteration (use phonetic class for consistent font) + audio
+            frontText.innerText = `/${cardData.phonetic}/`;
+            frontText.className = 'phonetic';
+            frontText.style.position = 'static';
+            frontText.style.fontSize = 'clamp(1.8rem, 8vw, 3rem)';
             frontBtn.style.display = 'flex';
             
-            // Back: Thai script + English meaning below
-            backText.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
-                    <span class="thai-font text-huge">${cardData.thai}</span>
-                    <span class="eng-font text-med" style="color: #666;">${cardData.eng || ''}</span>
-                </div>
-            `;
-            backText.className = '';
+            // Back: Thai script centered, English at bottom (like vocab phonetic)
+            backText.innerText = cardData.thai;
+            setSize(backText, cardData.thai, true);
+            // Use backPhonetic div for English translation at bottom
+            backPhonetic.innerText = cardData.eng || '';
+            backPhonetic.style.display = 'block';
+            backPhonetic.className = 'phonetic';
         } else {
             // English Front Mode: Shows English on front, Thai + transliteration on back
             // Front: English meaning
             frontText.innerText = cardData.eng || '';
             setSize(frontText, cardData.eng || '', false);
             
-            // Back: Thai script + transliteration + audio
-            backText.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
-                    <span class="thai-font text-huge">${cardData.thai}</span>
-                    <span class="phonetic">/${cardData.phonetic}/</span>
-                </div>
-            `;
-            backText.className = '';
+            // Back: Thai script centered, transliteration at bottom
+            backText.innerText = cardData.thai;
+            setSize(backText, cardData.thai, true);
+            backPhonetic.innerText = `/${cardData.phonetic}/`;
+            backPhonetic.style.display = 'block';
+            backPhonetic.className = 'phonetic';
             backBtn.style.display = 'flex';
         }
     }
@@ -577,6 +589,9 @@ function updateCardContent() {
         else if (len <= 18) backText.classList.add('text-large');
         else if (len <= 30) backText.classList.add('text-med');
         else backText.classList.add('text-small');
+        
+        // Add extra line height for speaking mode to prevent diacritic overlap
+        backText.style.lineHeight = '1.6';
         
         backBtn.style.display = 'flex';
     }
