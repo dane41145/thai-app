@@ -27,7 +27,7 @@ if not GEMINI_KEY:
 SOURCES = {
     "vocab": {
         "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
+        "tabs": ["T1", "T2", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
