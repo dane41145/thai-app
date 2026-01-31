@@ -448,30 +448,24 @@ function updateCardContent() {
         const len = text.length;
         
         if (isThai) {
-            // Thai text - based on character count
+            // Thai text - based on character count, with generous line-height handled in CSS
             if (len <= 3) el.classList.add('text-jumbo');
             else if (len <= 6) el.classList.add('text-huge');
             else if (len <= 10) el.classList.add('text-large');
             else if (len <= 18) el.classList.add('text-med');
             else el.classList.add('text-small');
         } else {
-            // English text - check for long single words that would break badly
-            const hasSpace = text.includes(' ');
+            // English text - size based on longest word to prevent mid-word breaks
             const longestWord = text.split(/\s+/).reduce((max, word) => word.length > max ? word.length : max, 0);
             
-            if (!hasSpace) {
-                // Single word - size based on word length to prevent breaking
-                if (len <= 5) el.classList.add('text-huge');
-                else if (len <= 9) el.classList.add('text-large');
-                else if (len <= 14) el.classList.add('text-med');
-                else el.classList.add('text-small');
-            } else {
-                // Phrase with spaces - can wrap at spaces, so be more generous
-                if (len <= 8) el.classList.add('text-huge');
-                else if (len <= 15) el.classList.add('text-large');
-                else if (len <= 25) el.classList.add('text-med');
-                else el.classList.add('text-small');
-            }
+            // Use the longer of: total length / 2, or longest word
+            // This ensures long words don't break, but short phrases can still be large
+            const effectiveLen = Math.max(longestWord, Math.ceil(len / 2));
+            
+            if (effectiveLen <= 5) el.classList.add('text-huge');
+            else if (effectiveLen <= 8) el.classList.add('text-large');
+            else if (effectiveLen <= 12) el.classList.add('text-med');
+            else el.classList.add('text-small');
         }
     }
 
