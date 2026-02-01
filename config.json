@@ -1,10 +1,10 @@
 {
     "vocab": {
         "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["T1", "T2", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Vocab 6", "Vocab 7", "Places", "Numbers", "Bonus", "Archive"]
+        "tabs": ["T1", "T2", "T3", "T4", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Vocab 6", "Vocab 7", "Places", "Numbers", "Bonus", "Archive"]
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["V1", "V2", "V3", "P", "N"]
+        "tabs": ["N1", "V1", "V2", "V3", "V4", "V5", "P", "N"]
     }
 }
