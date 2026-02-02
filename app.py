@@ -24,26 +24,17 @@ if not AZURE_KEY:
 if not GEMINI_KEY:
     print("⚠️ WARNING: GEMINI_KEY environment variable not set!")
 
-SOURCES = {
-    "vocab": {
-        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["T1", "T2", "T3", "T4", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
-    },
-    "script": {
-        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
-        "tabs": ["N1", "V1", "V2", "V3", "V4", "V5", "P", "N"]
-    }
-}
-
-# Load from config.json if it exists (overrides the defaults above)
 CONFIG_FILE = "config.json"
-if os.path.exists(CONFIG_FILE):
-    try:
-        with open(CONFIG_FILE, 'r') as f:
-            SOURCES = json.load(f)
-        print(f"✅ Loaded config from {CONFIG_FILE}")
-    except Exception as e:
-        print(f"⚠️ Could not load {CONFIG_FILE}, using defaults: {e}")
+try:
+    with open(CONFIG_FILE, 'r') as f:
+        SOURCES = json.load(f)
+    print(f"✅ Loaded config from {CONFIG_FILE}")
+except FileNotFoundError:
+    print(f"❌ FATAL: {CONFIG_FILE} not found")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ FATAL: Could not parse {CONFIG_FILE}: {e}")
+    sys.exit(1)
 
 PROGRESS_FILE = "progress.json"
 # ==========================================
