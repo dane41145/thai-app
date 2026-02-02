@@ -8,6 +8,9 @@ import json
 import os
 import subprocess
 import tempfile
+import re
+import random
+import sys
 
 app = Flask(__name__)
 
@@ -24,15 +27,26 @@ if not AZURE_KEY:
 if not GEMINI_KEY:
     print("⚠️ WARNING: GEMINI_KEY environment variable not set!")
 
+SOURCES = {
+    "vocab": {
+        "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
+        "tabs": ["T1", "T2", "T3", "T4", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
+    },
+    "script": {
+        "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
+        "tabs": ["N1", "V1", "V2", "V3", "V4", "V5", "P", "N"]
+    }
+}
+
+# Load from config.json (required)
 CONFIG_FILE = "config.json"
 try:
     with open(CONFIG_FILE, 'r') as f:
         SOURCES = json.load(f)
     print(f"✅ Loaded config from {CONFIG_FILE}")
 except FileNotFoundError:
-    print(f"❌ FATAL: {CONFIG_FILE} not found")
-    sys.exit(1)
-except Exception as e:
+    print(f"⚠️ {CONFIG_FILE} not found, using hardcoded defaults")
+except json.JSONDecodeError as e:
     print(f"❌ FATAL: Could not parse {CONFIG_FILE}: {e}")
     sys.exit(1)
 
@@ -235,7 +249,13 @@ def load_all_decks():
             except Exception as e:
                 print(f"      ❌ Error [{tab_name}]: {e}")
 
-load_all_decks()
+try:
+    load_all_decks()
+    if not MEMORY_DECKS:
+        print("⚠️ WARNING: No decks were loaded! Check your Google Sheets configuration.")
+except Exception as e:
+    print(f"❌ FATAL: Failed to load decks: {e}")
+    sys.exit(1)
 
 # ==========================================
 # ROUTES
@@ -325,7 +345,6 @@ Generate 10 sentences now:"""
         generated_text = result['candidates'][0]['content']['parts'][0]['text']
         
         # Parse JSON from response (handle markdown code blocks)
-        import re
         json_match = re.search(r'\[.*\]', generated_text, re.DOTALL)
         if json_match:
             sentences = json.loads(json_match.group())
@@ -560,12 +579,10 @@ def concatenate_mp3_files(mp3_bytes_list):
         except Exception as e:
             print(f"Concatenation error: {e}")
             return b''
-            return b''
 
 @app.route('/download_deck/<deck_id>')
 def download_deck_mp3(deck_id):
     """Generate and download MP3 for entire vocab deck."""
-    import random
     
     # Only allow vocab decks
     if not deck_id.startswith('vocab_'):
