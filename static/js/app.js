@@ -14,10 +14,9 @@ let isAnimating = false;
 let undoHistory = []; // Stack of {card, action, deckSnapshot}
 const MAX_UNDO_HISTORY = 20;
 
-// ========== SHAKE DETECTION STATE ==========
-let lastShakeTime = 0;
-const SHAKE_THRESHOLD = 15;
-const SHAKE_COOLDOWN = 1000; // ms between shakes
+// ========== LONG PRESS STATE ==========
+let longPressTimer = null;
+const LONG_PRESS_DURATION = 2000; // 2 seconds
 
 // ========== NUMBERS GAME STATE ==========
 let numbersGameActive = false;
@@ -1037,60 +1036,51 @@ document.getElementById('numbersCard').addEventListener('click', () => {
     document.getElementById('numberInput').focus();
 });
 
-// ========== SHAKE DETECTION FOR MOBILE UNDO ==========
-let lastAcceleration = { x: 0, y: 0, z: 0 };
-
-function handleShake(event) {
-    const acceleration = event.accelerationIncludingGravity;
-    if (!acceleration) return;
+// ========== LONG PRESS TO UNDO ==========
+function initLongPressUndo() {
+    const card = document.getElementById('flashcard');
     
-    const deltaX = Math.abs(acceleration.x - lastAcceleration.x);
-    const deltaY = Math.abs(acceleration.y - lastAcceleration.y);
-    const deltaZ = Math.abs(acceleration.z - lastAcceleration.z);
-    
-    const totalDelta = deltaX + deltaY + deltaZ;
-    
-    if (totalDelta > SHAKE_THRESHOLD) {
-        const now = Date.now();
-        if (now - lastShakeTime > SHAKE_COOLDOWN) {
-            lastShakeTime = now;
-            // Only trigger undo if in flashcard game
-            if (document.getElementById('gameContainer').style.display === 'flex') {
-                undoLastAction();
-            }
-        }
+    function startLongPress(e) {
+        // Only in flashcard game
+        if (document.getElementById('gameContainer').style.display !== 'flex') return;
+        if (undoHistory.length === 0) return;
+        
+        // Start visual feedback
+        card.classList.add('long-press-active');
+        
+        longPressTimer = setTimeout(() => {
+            card.classList.remove('long-press-active');
+            card.classList.add('long-press-triggered');
+            undoLastAction();
+            
+            // Remove triggered class after animation
+            setTimeout(() => {
+                card.classList.remove('long-press-triggered');
+            }, 300);
+        }, LONG_PRESS_DURATION);
     }
     
-    lastAcceleration = {
-        x: acceleration.x,
-        y: acceleration.y,
-        z: acceleration.z
-    };
-}
-
-// Request permission for motion on iOS 13+
-function initShakeDetection() {
-    if (typeof DeviceMotionEvent !== 'undefined') {
-        if (typeof DeviceMotionEvent.requestPermission === 'function') {
-            // iOS 13+ requires permission
-            document.body.addEventListener('click', function requestMotion() {
-                DeviceMotionEvent.requestPermission()
-                    .then(response => {
-                        if (response === 'granted') {
-                            window.addEventListener('devicemotion', handleShake);
-                        }
-                    })
-                    .catch(console.error);
-                document.body.removeEventListener('click', requestMotion);
-            }, { once: true });
-        } else {
-            // Non-iOS or older iOS
-            window.addEventListener('devicemotion', handleShake);
+    function cancelLongPress() {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
         }
+        card.classList.remove('long-press-active');
     }
+    
+    // Touch events (mobile)
+    card.addEventListener('touchstart', startLongPress, { passive: true });
+    card.addEventListener('touchend', cancelLongPress);
+    card.addEventListener('touchcancel', cancelLongPress);
+    card.addEventListener('touchmove', cancelLongPress); // Cancel if finger moves
+    
+    // Mouse events (desktop fallback)
+    card.addEventListener('mousedown', startLongPress);
+    card.addEventListener('mouseup', cancelLongPress);
+    card.addEventListener('mouseleave', cancelLongPress);
 }
 
-initShakeDetection();
+initLongPressUndo();
 
 // Initialize the app
 initApp();
