@@ -10,6 +10,15 @@ let currentDeckId = '';
 let isFlipped = false;
 let isAnimating = false;
 
+// ========== UNDO STATE ==========
+let undoHistory = []; // Stack of {card, action, deckSnapshot}
+const MAX_UNDO_HISTORY = 20;
+
+// ========== SHAKE DETECTION STATE ==========
+let lastShakeTime = 0;
+const SHAKE_THRESHOLD = 15;
+const SHAKE_COOLDOWN = 1000; // ms between shakes
+
 // ========== NUMBERS GAME STATE ==========
 let numbersGameActive = false;
 let numbersInputLocked = false; // Prevents input during transitions
@@ -368,6 +377,7 @@ function switchMode(newMode) {
 function restartRound() {
     deck = [...fullVocab]; 
     deck.sort(() => Math.random() - 0.5);
+    undoHistory = []; // Clear undo history for new round
     document.getElementById('victoryArea').style.display = 'none';
     document.getElementById('gameArea').style.display = 'block';
     document.getElementById('actionArea').style.display = 'flex';
@@ -397,6 +407,17 @@ function handleResult(isCorrect) {
 
     setTimeout(() => {
         const currentCard = deck[0];
+        
+        // Save to undo history before modifying deck
+        undoHistory.push({
+            card: currentCard,
+            wasCorrect: isCorrect,
+            deckLength: deck.length
+        });
+        if (undoHistory.length > MAX_UNDO_HISTORY) {
+            undoHistory.shift(); // Remove oldest entry
+        }
+        
         deck.shift(); 
         if (!isCorrect) deck.push(currentCard);
 
@@ -422,6 +443,60 @@ function handleResult(isCorrect) {
             });
         });
     }, 300);
+}
+
+function undoLastAction() {
+    // Don't undo if animating, no history, or not in flashcard game
+    if (isAnimating || undoHistory.length === 0) return;
+    if (document.getElementById('gameContainer').style.display !== 'flex') return;
+    
+    const isOnVictoryScreen = document.getElementById('victoryArea').style.display === 'flex';
+    
+    isAnimating = true;
+    const lastAction = undoHistory.pop();
+    const moverEl = document.getElementById('cardMover');
+    const cardEl = document.getElementById('flashcard');
+    const actionArea = document.getElementById('actionArea');
+    
+    // If the card was marked incorrect, it's now at the end of deck - remove it
+    if (!lastAction.wasCorrect && deck.length > 0) {
+        deck.pop();
+    }
+    
+    // Put the card back at the front
+    deck.unshift(lastAction.card);
+    
+    // If coming back from victory screen, restore the game UI
+    if (isOnVictoryScreen) {
+        document.getElementById('victoryArea').style.display = 'none';
+        document.getElementById('gameArea').style.display = 'block';
+        document.getElementById('actionArea').style.display = 'flex';
+        document.getElementById('topControls').style.visibility = 'visible';
+    }
+    
+    // Animate card coming back
+    cardEl.style.transition = 'none';
+    cardEl.classList.remove('is-flipped');
+    isFlipped = false;
+    actionArea.classList.remove('visible');
+    
+    // Quick flash animation to show undo happened
+    moverEl.style.opacity = '0';
+    updateCardContent();
+    
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            moverEl.style.transition = 'opacity 0.3s';
+            moverEl.style.opacity = '1';
+            cardEl.style.transition = 'transform 0.6s';
+            setTimeout(() => {
+                moverEl.style.transition = '';
+                isAnimating = false;
+            }, 300);
+        });
+    });
+    
+    console.log('Undo: restored card', lastAction.card.thai || lastAction.card.eng);
 }
 
 function updateCardContent() {
@@ -916,6 +991,13 @@ document.addEventListener('keydown', (e) => {
     
     // Flashcard game input
     if (document.getElementById('gameContainer').style.display === 'flex') {
+        // Undo with Ctrl+Z / Cmd+Z
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+            undoLastAction();
+            return;
+        }
+        
         if (!isFlipped && !isAnimating && e.code === 'Space') flipCard();
         if (isFlipped && !isAnimating) {
             if (e.code === 'ArrowLeft') handleResult(false);
@@ -954,6 +1036,61 @@ document.getElementById('numberInput').addEventListener('input', (e) => {
 document.getElementById('numbersCard').addEventListener('click', () => {
     document.getElementById('numberInput').focus();
 });
+
+// ========== SHAKE DETECTION FOR MOBILE UNDO ==========
+let lastAcceleration = { x: 0, y: 0, z: 0 };
+
+function handleShake(event) {
+    const acceleration = event.accelerationIncludingGravity;
+    if (!acceleration) return;
+    
+    const deltaX = Math.abs(acceleration.x - lastAcceleration.x);
+    const deltaY = Math.abs(acceleration.y - lastAcceleration.y);
+    const deltaZ = Math.abs(acceleration.z - lastAcceleration.z);
+    
+    const totalDelta = deltaX + deltaY + deltaZ;
+    
+    if (totalDelta > SHAKE_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastShakeTime > SHAKE_COOLDOWN) {
+            lastShakeTime = now;
+            // Only trigger undo if in flashcard game
+            if (document.getElementById('gameContainer').style.display === 'flex') {
+                undoLastAction();
+            }
+        }
+    }
+    
+    lastAcceleration = {
+        x: acceleration.x,
+        y: acceleration.y,
+        z: acceleration.z
+    };
+}
+
+// Request permission for motion on iOS 13+
+function initShakeDetection() {
+    if (typeof DeviceMotionEvent !== 'undefined') {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            // iOS 13+ requires permission
+            document.body.addEventListener('click', function requestMotion() {
+                DeviceMotionEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            window.addEventListener('devicemotion', handleShake);
+                        }
+                    })
+                    .catch(console.error);
+                document.body.removeEventListener('click', requestMotion);
+            }, { once: true });
+        } else {
+            // Non-iOS or older iOS
+            window.addEventListener('devicemotion', handleShake);
+        }
+    }
+}
+
+initShakeDetection();
 
 // Initialize the app
 initApp();
