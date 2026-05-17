@@ -30,7 +30,7 @@ if not GEMINI_KEY:
 SOURCES = {
     "vocab": {
         "sheet_id": "13yvW0q6WXHlabaRjJUSKdreNmHH-NI-_OVtRfndO_e8",
-        "tabs": ["Time", "Lesson1", "New1", "New2", "New3", "New4", "New5", "New6", "Arc1", "Arc2", "Arc3", "Arc4", "Arc5", "T1", "T2", "T3", "T4", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
+        "tabs": ["Time", "Lesson1", "Lesson2", "New1", "New2", "New3", "New4", "New5", "New6", "Arc1", "Arc2", "Arc3", "Arc4", "Arc5", "T1", "T2", "T3", "T4", "Vocab 1", "Vocab 2", "Vocab 3", "Vocab 4", "Vocab 5", "Places", "Numbers"]
     },
     "script": {
         "sheet_id": "1ny4GYNfDmK-vQH84OlpJe1PW-XemKMmVtncaKpTm0Og",
