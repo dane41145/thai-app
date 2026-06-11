@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Secrets — never commit API keys
+.env
+
+# Runtime data
+progress.json
+*.tmp
+
+# macOS
+.DS_Store
+
+# Local tooling
+.claude/

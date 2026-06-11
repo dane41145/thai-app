@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thai Flashcards</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@200;300;400&family=Mali:wght@200;300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Connecting...</div>
+    </div>
+
+    <div id="categoryMenu">
+        <h1 style="color: #444; margin-bottom: 30px; font-weight: 200;">Choose Mode</h1>
+        <div class="cat-grid">
+            <button class="cat-btn" onclick="showDecks('vocab')"><span class="emoji">📖</span>Vocab</button>
+            <button class="cat-btn" onclick="showDecks('script')"><span class="emoji">✍️</span>Script</button>
+            <button class="cat-btn" onclick="startLettersMode()"><span class="emoji">🔡</span>Letters</button>
+            <button class="cat-btn" onclick="startNumbersGame()"><span class="emoji">🔢</span>Numbers</button>
+            <button class="cat-btn" onclick="startSpeakingMode()"><span class="emoji">💬</span>Speaking</button>
+        </div>
+    </div>
+
+    <div id="deckMenu">
+        <button class="back-nav-btn" onclick="goBackToCategories()">🔙 Change Mode</button>
+        <h1 style="color: #444; margin-bottom: 20px; font-weight: 200;">Select a Deck</h1>
+        <div id="deckListArea" class="deck-grid"></div>
+    </div>
+
+    <div id="gameContainer">
+        <div class="controls" id="topControls">
+            <button class="home-btn" onclick="goHome()" title="Back to Decks">🏠</button>
+            <div class="mode-toggle" id="modeToggle">
+                <button id="btnThai" class="toggle-btn active" onclick="switchMode('thai_front')">🇹🇭 Thai</button>
+                <button id="btnEng" class="toggle-btn" onclick="switchMode('eng_front')">🇬🇧 Eng</button>
+            </div>
+            <span id="deckTitle" class="deck-title-badge"></span>
+            <span id="counter" class="counter-badge">--</span>
+        </div>
+
+        <div class="card-wrapper" id="gameArea">
+            <div class="card-mover" id="cardMover">
+                <div class="card" id="flashcard" onclick="flipCard()">
+                    <div class="face front">
+                        <h2 id="frontText">...</h2>
+                        <div id="frontPhonetic" class="phonetic"></div>
+                        <button id="frontAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                    </div>
+                    <div class="face back">
+                        <h2 id="backText">...</h2>
+                        <div id="backPhonetic" class="phonetic"></div>
+                        <button id="backAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="victory-screen" id="victoryArea">
+            <div style="font-size: 80px; margin-bottom: 20px;">🎉</div>
+            <h1>Deck Complete!</h1>
+            <button class="restart-btn" onclick="goHome()" style="margin-bottom: 10px;">Select Another Deck</button>
+            <button class="restart-btn secondary-btn" onclick="restartRound()">Start Over</button>
+        </div>
+
+        <div class="action-area" id="actionArea">
+            <button class="action-btn btn-retry" onclick="handleResult(false)">Study Again ↺</button>
+            <button class="action-btn btn-success" onclick="handleResult(true)">Got It! ✓</button>
+        </div>
+    </div>
+
+    <!-- NUMBERS GAME -->
+    <div id="numbersContainer">
+        <div class="numbers-controls">
+            <button class="home-btn" onclick="exitNumbersGame()" title="Back to Menu">🏠</button>
+            <span class="counter-badge" id="numbersLevel">Level 1 of 7</span>
+        </div>
+
+        <div class="numbers-card" id="numbersCard">
+            <div class="level-progress" id="levelProgress">
+                <div class="level-dot current"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+                <div class="level-dot"></div>
+            </div>
+            
+            <button class="numbers-audio-btn" onclick="playNumberAudio()" title="Play Audio">🔊</button>
+            
+            <div class="digit-display" id="digitDisplay"></div>
+            
+            <input type="text" inputmode="numeric" class="number-input" id="numberInput" autocomplete="off">
+            
+            <div class="numbers-message" id="numbersMessage">Listen and type the number</div>
+        </div>
+
+        <div class="numbers-victory" id="numbersVictory">
+            <div style="font-size: 80px; margin-bottom: 20px;">🎉</div>
+            <h1>Perfect Score!</h1>
+            <p style="color: #666; font-size: 1.1rem;">You mastered all 7 levels!</p>
+            <button class="restart-btn" onclick="restartNumbersGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
