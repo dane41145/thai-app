@@ -347,7 +347,12 @@ async function loadDeckData(gid, deckName) {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({text: words[i].audio_text, speed: 0.9})
-            }).then(r=>r.blob()).then(b => { audioCache[words[i].audio_text] = URL.createObjectURL(b); });
+            }).then(r => {
+                if (!r.ok) throw new Error(`TTS ${r.status}`);
+                return r.blob();
+            }).then(b => {
+                if (b.size) audioCache[words[i].audio_text] = URL.createObjectURL(b);
+            }).catch(() => {}); // preload is best-effort; playback retries on demand
         }
 
         fullVocab = [...words];
@@ -392,9 +397,19 @@ function switchMode(newMode) {
     restartRound();
 }
 
+// Fisher-Yates: unbiased, unlike the sort(() => Math.random() - 0.5) trick,
+// which systematically favours some orderings.
+function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
 function restartRound() {
-    deck = [...fullVocab]; 
-    deck.sort(() => Math.random() - 0.5);
+    deck = [...fullVocab];
+    shuffleInPlace(deck);
     undoHistory = []; // Clear undo history for new round
     document.getElementById('victoryArea').style.display = 'none';
     document.getElementById('gameArea').style.display = 'block';
@@ -801,8 +816,14 @@ function playCurrentAudio() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({text: textToSpeak, speed: 0.9})
     })
-    .then(res => res.blob())
+    .then(res => {
+        if (!res.ok) throw new Error(`TTS failed (${res.status})`);
+        return res.blob();
+    })
     .then(blob => {
+        if (!blob.size) throw new Error('TTS returned empty audio');
+        // Only successful audio is cached — a failure here used to be cached
+        // as silence and mute that word for the rest of the session.
         const url = URL.createObjectURL(blob);
         audioCache[textToSpeak] = url;
         new Audio(url).play();
@@ -849,8 +870,9 @@ async function generateNumbersChallenges() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ number: challenge.number, speed: 0.85 })
             });
+            if (!response.ok) throw new Error(`TTS ${response.status}`);
             const blob = await response.blob();
-            challenge.audioUrl = URL.createObjectURL(blob);
+            if (blob.size) challenge.audioUrl = URL.createObjectURL(blob);
         } catch (e) {
             console.error(`Failed to load audio for level ${index + 1}`, e);
         }

@@ -12,11 +12,34 @@ import re
 import random
 import sys
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from xml.sax.saxutils import escape
+
+from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+load_dotenv()  # pull AZURE_KEY / AZURE_REGION / GEMINI_KEY from a local .env, if present
 
 app = Flask(__name__)
+
+# Render/Heroku terminate TLS at a single proxy hop; trust one X-Forwarded-For
+# entry so rate limits apply to the real client IP, not the proxy's.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+# Per-IP rate limits for the endpoints that cost money (Azure / Gemini) or
+# hammer Google Sheets. Only routes with an explicit @limiter.limit are limited.
+# In-memory storage is fine here because the app runs as a single process.
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({'error': f'Rate limit exceeded: {e.description}'}), 429
 
 # ==========================================
 # CONFIGURATION
@@ -51,6 +74,9 @@ PROGRESS_FILE = "progress.json"
 # Network timeouts (connect, read) in seconds, so a hung request can't stall us.
 SHEET_TIMEOUT = (5, 15)
 AZURE_TIMEOUT = (5, 30)
+
+MAX_TTS_CHARS = 300    # cap /speak input — it's a paid API
+AZURE_TOKEN_TTL = 480  # Azure tokens are valid 10 min; reuse ours for 8
 # ==========================================
 
 
@@ -79,46 +105,75 @@ class LRUCache:
 AUDIO_CACHE = LRUCache(maxsize=512)   # bounded: evicts least-recently-used audio
 MEMORY_DECKS = {}                     # swapped atomically by load_all_decks()
 DECKS_LOCK = threading.Lock()         # serializes reloads (startup + /refresh)
+PROGRESS_LOCK = threading.Lock()      # serializes read-modify-write of progress.json
+
+AZURE_TOKEN = {'value': None, 'expires': 0.0}
+AZURE_TOKEN_LOCK = threading.Lock()
 
 # ==========================================
 # AZURE TTS REST API (no SDK needed)
 # ==========================================
+def _get_azure_token():
+    """Return a cached Azure auth token, fetching a new one only when expired.
+
+    Tokens are valid for 10 minutes; we reuse one for AZURE_TOKEN_TTL (8 min).
+    Previously every synthesis call fetched a fresh token, doubling latency
+    and request volume — MP3 deck jobs especially.
+    """
+    if not AZURE_KEY:
+        return None
+
+    with AZURE_TOKEN_LOCK:
+        if AZURE_TOKEN['value'] and time.time() < AZURE_TOKEN['expires']:
+            return AZURE_TOKEN['value']
+
+        token_url = f"https://{AZURE_REGION}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
+        headers = {
+            'Ocp-Apim-Subscription-Key': AZURE_KEY,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        try:
+            response = requests.post(token_url, headers=headers, timeout=AZURE_TIMEOUT)
+            response.raise_for_status()
+            AZURE_TOKEN['value'] = response.text
+            AZURE_TOKEN['expires'] = time.time() + AZURE_TOKEN_TTL
+            return AZURE_TOKEN['value']
+        except Exception as e:
+            print(f"Token Error: {e}")
+            return None
+
+
 def azure_tts_rest(text, voice, speed=1.0):
     """
     Call Azure TTS using REST API instead of SDK.
     This works on any platform without native library dependencies.
     """
-    # Get access token
-    token_url = f"https://{AZURE_REGION}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
-    headers = {
-        'Ocp-Apim-Subscription-Key': AZURE_KEY,
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    try:
-        token_response = requests.post(token_url, headers=headers, timeout=AZURE_TIMEOUT)
-        token_response.raise_for_status()
-        access_token = token_response.text
-    except Exception as e:
-        print(f"Token Error: {e}")
+    access_token = _get_azure_token()
+    if not access_token:
         return None
-    
-    # Call TTS API
+
+    try:
+        speed = max(0.5, min(2.0, float(speed)))
+    except (TypeError, ValueError):
+        speed = 1.0
+
     tts_url = f"https://{AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1"
-    
+
+    # escape() keeps &, <, > in card text from breaking the XML — and blocks
+    # SSML tag injection via user-supplied text.
     ssml = f'''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH">
         <voice name="{voice}">
-            <prosody rate="{speed}">{text}</prosody>
+            <prosody rate="{speed}">{escape(str(text))}</prosody>
         </voice>
     </speak>'''
-    
+
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/ssml+xml',
         'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
         'User-Agent': 'ThaiLearningApp'
     }
-    
+
     try:
         response = requests.post(tts_url, headers=headers, data=ssml.encode('utf-8'), timeout=AZURE_TIMEOUT)
         response.raise_for_status()
@@ -141,14 +196,26 @@ def load_progress():
         try:
             with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            print(f"⚠️ Could not read {PROGRESS_FILE} ({e}); starting with empty progress")
             return {}
     return {}
 
 def save_progress(progress):
-    """Save progress to JSON file."""
-    with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(progress, f, indent=2, ensure_ascii=False) 
+    """Save progress atomically: write a unique temp file, then rename it over
+    the real one. A crash mid-write can no longer corrupt the file (which the
+    old code would then silently swallow, resetting all progress)."""
+    fd, tmp_path = tempfile.mkstemp(prefix='progress_', suffix='.tmp', dir='.')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(progress, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, PROGRESS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 # ==========================================
 # THAI NUMBER CONVERSION
@@ -320,6 +387,7 @@ def get_decks():
     return jsonify(deck_list)
 
 @app.route('/refresh', methods=['POST'])
+@limiter.limit("2/minute")
 def refresh_decks():
     """Reload decks from Google Sheets without restarting the server.
 
@@ -334,6 +402,7 @@ def get_vocab(deck_id):
     return jsonify(deck['words'] if deck else [])
 
 @app.route('/generate_sentences', methods=['POST'])
+@limiter.limit("5/minute")
 def generate_sentences():
     """
     Generate Thai sentences using only words from the wordbank.
@@ -417,11 +486,17 @@ Generate 10 sentences now:"""
         return jsonify({'error': str(e)}), 500
 
 @app.route('/speak', methods=['POST'])
+@limiter.limit("60/minute")
 def speak():
-    data = request.json
-    text = data.get('text', '')
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
     speed = data.get('speed', 0.9)
-    
+
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    if len(text) > MAX_TTS_CHARS:
+        return jsonify({'error': f'Text too long (max {MAX_TTS_CHARS} chars)'}), 400
+
     cache_key = f"{text}_{speed}"
     cached = AUDIO_CACHE.get(cache_key)
     if cached is not None:
@@ -435,23 +510,26 @@ def speak():
     except Exception as e:
         print(f"Audio Error: {e}")
 
-    return Response(b'', mimetype="audio/mpeg")
+    # A real error status (not 200 with an empty body) so the client knows
+    # not to cache the failure.
+    return jsonify({'error': 'TTS unavailable'}), 503
 
 @app.route('/speak_number', methods=['POST'])
+@limiter.limit("30/minute")
 def speak_number():
     """Endpoint for numbers - converts to proper Thai text first."""
-    data = request.json
+    data = request.get_json(silent=True) or {}
     number = data.get('number', 0)
     speed = data.get('speed', 0.85)
-    
+
     try:
         number = int(number)
     except (ValueError, TypeError):
-        return Response(b'', mimetype="audio/mpeg")
-    
+        return jsonify({'error': 'Invalid number'}), 400
+
     thai_text = number_to_thai(number)
     print(f"   🔢 Number {number} → Thai: {thai_text}")
-    
+
     cache_key = f"num_{number}_{speed}"
     cached = AUDIO_CACHE.get(cache_key)
     if cached is not None:
@@ -465,7 +543,7 @@ def speak_number():
     except Exception as e:
         print(f"Audio Error: {e}")
 
-    return Response(b'', mimetype="audio/mpeg")
+    return jsonify({'error': 'TTS unavailable'}), 503
 
 @app.route('/number_to_thai/<int:number>')
 def get_thai_number(number):
@@ -481,35 +559,36 @@ def get_thai_number(number):
 @app.route('/progress')
 def get_progress():
     """Get all progress data, auto-reset any decks whose hash has changed."""
-    progress = load_progress()
-    updated = False
-    
-    # Check each deck's hash and reset if changed
-    for deck_id, deck_data in MEMORY_DECKS.items():
-        current_hash = deck_data['hash']
-        if deck_id in progress:
-            stored_hash = progress[deck_id].get('hash', '')
-            if stored_hash != current_hash:
-                # Deck content changed - reset progress
-                print(f"   🔄 Deck '{deck_id}' changed (hash {stored_hash} → {current_hash}), resetting progress")
+    with PROGRESS_LOCK:
+        progress = load_progress()
+        updated = False
+
+        # Check each deck's hash and reset if changed
+        for deck_id, deck_data in MEMORY_DECKS.items():
+            current_hash = deck_data['hash']
+            if deck_id in progress:
+                stored_hash = progress[deck_id].get('hash', '')
+                if stored_hash != current_hash:
+                    # Deck content changed - reset progress
+                    print(f"   🔄 Deck '{deck_id}' changed (hash {stored_hash} → {current_hash}), resetting progress")
+                    progress[deck_id] = {
+                        'hash': current_hash,
+                        'thai': False,
+                        'eng': False
+                    }
+                    updated = True
+            else:
+                # New deck - initialize progress
                 progress[deck_id] = {
                     'hash': current_hash,
                     'thai': False,
                     'eng': False
                 }
                 updated = True
-        else:
-            # New deck - initialize progress
-            progress[deck_id] = {
-                'hash': current_hash,
-                'thai': False,
-                'eng': False
-            }
-            updated = True
-    
-    if updated:
-        save_progress(progress)
-    
+
+        if updated:
+            save_progress(progress)
+
     return jsonify(progress)
 
 @app.route('/complete/<deck_id>/<mode>', methods=['POST'])
@@ -521,20 +600,21 @@ def mark_complete(deck_id, mode):
     if deck_id not in MEMORY_DECKS:
         return jsonify({'error': 'Deck not found'}), 404
     
-    progress = load_progress()
-    current_hash = MEMORY_DECKS[deck_id]['hash']
-    
-    if deck_id not in progress:
-        progress[deck_id] = {
-            'hash': current_hash,
-            'thai': False,
-            'eng': False
-        }
-    
-    progress[deck_id][mode] = True
-    progress[deck_id]['hash'] = current_hash
-    save_progress(progress)
-    
+    with PROGRESS_LOCK:
+        progress = load_progress()
+        current_hash = MEMORY_DECKS[deck_id]['hash']
+
+        if deck_id not in progress:
+            progress[deck_id] = {
+                'hash': current_hash,
+                'thai': False,
+                'eng': False
+            }
+
+        progress[deck_id][mode] = True
+        progress[deck_id]['hash'] = current_hash
+        save_progress(progress)
+
     print(f"   ✅ Marked {deck_id} [{mode}] as complete")
     return jsonify({'success': True, 'deck_id': deck_id, 'mode': mode})
 
@@ -544,16 +624,17 @@ def reset_deck(deck_id):
     if deck_id not in MEMORY_DECKS:
         return jsonify({'error': 'Deck not found'}), 404
     
-    progress = load_progress()
-    current_hash = MEMORY_DECKS[deck_id]['hash']
-    
-    progress[deck_id] = {
-        'hash': current_hash,
-        'thai': False,
-        'eng': False
-    }
-    save_progress(progress)
-    
+    with PROGRESS_LOCK:
+        progress = load_progress()
+        current_hash = MEMORY_DECKS[deck_id]['hash']
+
+        progress[deck_id] = {
+            'hash': current_hash,
+            'thai': False,
+            'eng': False
+        }
+        save_progress(progress)
+
     print(f"   🔄 Reset progress for {deck_id}")
     return jsonify({'success': True, 'deck_id': deck_id})
 
@@ -712,6 +793,7 @@ def _run_download_job(job_id, deck_id):
 
 
 @app.route('/download_deck/<deck_id>/start', methods=['POST'])
+@limiter.limit("3/minute;20/hour")
 def start_download(deck_id):
     """Kick off MP3 generation in the background; returns a job_id to poll."""
     if not deck_id.startswith('vocab_'):
