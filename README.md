@@ -66,6 +66,17 @@ restarting. Sheet columns: `Thai`, `Pronunciation`, `English`, and optional
 Rate limits are per-IP (flask-limiter). Endpoints that call paid APIs return
 `503` on synthesis failure and `400` on bad input.
 
+## Tests
+
+```zsh
+pip install -r requirements-dev.txt
+pytest
+```
+
+Covers the pure logic in `thai_utils.py`: Thai number spelling (including the
+เอ็ด and ยี่สิบ irregulars), the audio LRU cache, TTS text cleanup, and deck
+hashing. The tests run without network access — they don't import the app.
+
 ## Deployment notes (Render)
 
 - `Procfile` runs gunicorn with **one worker process** + 8 threads. Keep it at

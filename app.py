@@ -3,7 +3,6 @@ import csv
 import requests
 import io
 import urllib.parse
-import hashlib
 import json
 import os
 import subprocess
@@ -14,7 +13,6 @@ import sys
 import threading
 import time
 import uuid
-from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.sax.saxutils import escape
 
@@ -22,6 +20,8 @@ from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+from thai_utils import LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai
 
 load_dotenv()  # pull AZURE_KEY / AZURE_REGION / GEMINI_KEY from a local .env, if present
 
@@ -78,28 +78,6 @@ AZURE_TIMEOUT = (5, 30)
 MAX_TTS_CHARS = 300    # cap /speak input — it's a paid API
 AZURE_TOKEN_TTL = 480  # Azure tokens are valid 10 min; reuse ours for 8
 # ==========================================
-
-
-class LRUCache:
-    """Thread-safe, size-bounded LRU cache for audio blobs (bytes)."""
-    def __init__(self, maxsize=512):
-        self.maxsize = maxsize
-        self._store = OrderedDict()
-        self._lock = threading.Lock()
-
-    def get(self, key):
-        with self._lock:
-            if key not in self._store:
-                return None
-            self._store.move_to_end(key)
-            return self._store[key]
-
-    def put(self, key, value):
-        with self._lock:
-            self._store[key] = value
-            self._store.move_to_end(key)
-            while len(self._store) > self.maxsize:
-                self._store.popitem(last=False)
 
 
 AUDIO_CACHE = LRUCache(maxsize=512)   # bounded: evicts least-recently-used audio
@@ -185,11 +163,6 @@ def azure_tts_rest(text, voice, speed=1.0):
 # ==========================================
 # PROGRESS TRACKING
 # ==========================================
-def compute_deck_hash(words):
-    """Generate a short hash from deck content to detect changes."""
-    content = '|'.join(w['thai'] + w.get('eng', '') for w in words)
-    return hashlib.md5(content.encode()).hexdigest()[:8]
-
 def load_progress():
     """Load progress from JSON file."""
     if os.path.exists(PROGRESS_FILE):
@@ -216,68 +189,6 @@ def save_progress(progress):
         except OSError:
             pass
         raise
-
-# ==========================================
-# THAI NUMBER CONVERSION
-# ==========================================
-THAI_DIGITS = ['ศูนย์', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า']
-THAI_PLACES = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน', 'ล้าน']
-
-def number_to_thai(n):
-    """
-    Convert an integer to Thai text representation.
-    Handles numbers from 0 to 9,999,999.
-    """
-    if n == 0:
-        return 'ศูนย์'
-    
-    if n < 0 or n > 9999999:
-        return str(n)
-    
-    result = ''
-    
-    if n >= 1000000:
-        millions = n // 1000000
-        result += number_to_thai_under_million(millions) + 'ล้าน'
-        n = n % 1000000
-    
-    if n > 0:
-        result += number_to_thai_under_million(n)
-    
-    return result
-
-def number_to_thai_under_million(n):
-    """Convert a number under 1,000,000 to Thai."""
-    if n == 0:
-        return ''
-    
-    result = ''
-    s = str(n).zfill(6)
-    places = ['แสน', 'หมื่น', 'พัน', 'ร้อย', 'สิบ', '']
-    
-    for i, digit in enumerate(s):
-        d = int(digit)
-        place = places[i]
-        
-        if d == 0:
-            continue
-        
-        if place == 'สิบ':
-            if d == 1:
-                result += 'สิบ'
-            elif d == 2:
-                result += 'ยี่สิบ'
-            else:
-                result += THAI_DIGITS[d] + 'สิบ'
-        elif place == '':
-            if d == 1 and n > 1:
-                result += 'เอ็ด'
-            else:
-                result += THAI_DIGITS[d]
-        else:
-            result += THAI_DIGITS[d] + place
-    
-    return result
 
 # ==========================================
 # DECK LOADING
@@ -641,21 +552,6 @@ def reset_deck(deck_id):
 # ==========================================
 # MP3 DOWNLOAD
 # ==========================================
-def clean_english_for_tts(text):
-    """
-    Clean English text for more natural TTS output.
-    - Remove parentheses but keep content: "(I) bought" -> "I bought"
-    - Replace " / " with " or ": "already / and then" -> "already or and then"
-    """
-    import re
-    # Remove parentheses but keep the content inside
-    text = re.sub(r'\(([^)]*)\)', r'\1', text)
-    # Replace slash with "or"
-    text = re.sub(r'\s*/\s*', ' or ', text)
-    # Clean up any double spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
 def generate_audio_bytes(text, voice, speed=0.9):
     """Generate audio for text and return as bytes using REST API."""
     return azure_tts_rest(text, voice, speed)

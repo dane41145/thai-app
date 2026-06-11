@@ -1,5 +1,18 @@
 const audioCache = {};
-let allDecksData = []; 
+
+// One shared player: rapid taps restart the clip instead of layering copies,
+// and the .catch absorbs mobile autoplay blocks (no user gesture yet) instead
+// of leaving unhandled promise rejections.
+const audioPlayer = new Audio();
+function playAudioUrl(url) {
+    if (!url) return;
+    audioPlayer.pause();
+    audioPlayer.src = url;
+    audioPlayer.currentTime = 0;
+    audioPlayer.play().catch(e => console.warn('Audio playback skipped:', e.message));
+}
+
+let allDecksData = [];
 let progressData = {}; // Track completion status
 let fullVocab = []; 
 let deck = [];      
@@ -137,8 +150,8 @@ async function showDecks(category) {
                     </div>
                 </div>
                 <div class="deck-actions">
-                    <button class="deck-reset-btn" title="Reset progress" data-deck-id="${d.gid}">🔄</button>
-                    ${isVocab ? `<button class="deck-download-btn" title="Download MP3" data-deck-id="${d.gid}">⬇️</button>` : ''}
+                    <button class="deck-reset-btn" title="Reset progress" aria-label="Reset progress for ${d.name}" data-deck-id="${d.gid}">🔄</button>
+                    ${isVocab ? `<button class="deck-download-btn" title="Download MP3" aria-label="Download ${d.name} as MP3" data-deck-id="${d.gid}">⬇️</button>` : ''}
                 </div>
             `;
             
@@ -213,7 +226,7 @@ async function downloadDeckMp3(deckId, deckName) {
         URL.revokeObjectURL(url);
     } catch (err) {
         console.error('Download failed:', err);
-        alert('Failed to download MP3: ' + err.message);
+        showToast('Failed to download MP3: ' + err.message);
     }
 
     hideLoading();
@@ -323,7 +336,7 @@ async function startSpeakingMode() {
         
     } catch (err) {
         hideLoading();
-        alert('Failed to generate sentences: ' + err.message);
+        showToast('Failed to generate sentences: ' + err.message);
         console.error('Speaking mode error:', err);
     }
 }
@@ -359,7 +372,7 @@ async function loadDeckData(gid, deckName) {
         hideLoading();
         startGameUI();
     } catch (err) {
-        alert("Failed to load deck data.");
+        showToast('Failed to load deck data.');
         hideLoading();
     }
 }
@@ -808,7 +821,7 @@ function playCurrentAudio() {
     const textToSpeak = deck[0].audio_text;
 
     if (audioCache[textToSpeak]) {
-        new Audio(audioCache[textToSpeak]).play();
+        playAudioUrl(audioCache[textToSpeak]);
         return;
     }
     fetch('/speak', {
@@ -826,7 +839,7 @@ function playCurrentAudio() {
         // as silence and mute that word for the rest of the session.
         const url = URL.createObjectURL(blob);
         audioCache[textToSpeak] = url;
-        new Audio(url).play();
+        playAudioUrl(url);
     })
     .catch(e => console.error("Audio failed", e));
 }
@@ -842,6 +855,26 @@ function hideLoading() {
     const overlay = document.getElementById('loadingOverlay');
     overlay.style.opacity = '0';
     setTimeout(() => { overlay.style.display = 'none'; }, 500);
+}
+
+// Non-blocking error/info notice that replaces alert() popups.
+function showToast(message, type = 'error') {
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', 'alert');
+    toast.textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+    setTimeout(() => {
+        toast.classList.remove('toast-visible');
+        setTimeout(() => toast.remove(), 400); // after fade-out
+    }, 4000);
 }
 
 // ========== NUMBERS GAME ==========
@@ -950,7 +983,7 @@ function renderNumbersLevel() {
 function playNumberAudio() {
     const challenge = numbersChallenges[currentNumberLevel];
     if (challenge && challenge.audioUrl) {
-        new Audio(challenge.audioUrl).play();
+        playAudioUrl(challenge.audioUrl);
     }
 }
 

@@ -36,7 +36,7 @@
 
     <div id="gameContainer">
         <div class="controls" id="topControls">
-            <button class="home-btn" onclick="goHome()" title="Back to Decks">🏠</button>
+            <button class="home-btn" onclick="goHome()" title="Back to Decks" aria-label="Back to decks">🏠</button>
             <div class="mode-toggle" id="modeToggle">
                 <button id="btnThai" class="toggle-btn active" onclick="switchMode('thai_front')">🇹🇭 Thai</button>
                 <button id="btnEng" class="toggle-btn" onclick="switchMode('eng_front')">🇬🇧 Eng</button>
@@ -47,16 +47,16 @@
 
         <div class="card-wrapper" id="gameArea">
             <div class="card-mover" id="cardMover">
-                <div class="card" id="flashcard" onclick="flipCard()">
+                <div class="card" id="flashcard" onclick="flipCard()" role="button" aria-label="Flashcard — tap or press space to flip">
                     <div class="face front">
                         <h2 id="frontText">...</h2>
                         <div id="frontPhonetic" class="phonetic"></div>
-                        <button id="frontAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                        <button id="frontAudioBtn" class="audio-btn" style="display:none" aria-label="Play audio" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
                     </div>
                     <div class="face back">
                         <h2 id="backText">...</h2>
                         <div id="backPhonetic" class="phonetic"></div>
-                        <button id="backAudioBtn" class="audio-btn" style="display:none" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
+                        <button id="backAudioBtn" class="audio-btn" style="display:none" aria-label="Play audio" onclick="event.stopPropagation(); playCurrentAudio()">🔊</button>
                     </div>
                 </div>
             </div>
@@ -78,7 +78,7 @@
     <!-- NUMBERS GAME -->
     <div id="numbersContainer">
         <div class="numbers-controls">
-            <button class="home-btn" onclick="exitNumbersGame()" title="Back to Menu">🏠</button>
+            <button class="home-btn" onclick="exitNumbersGame()" title="Back to Menu" aria-label="Back to menu">🏠</button>
             <span class="counter-badge" id="numbersLevel">Level 1 of 7</span>
         </div>
 
@@ -93,11 +93,11 @@
                 <div class="level-dot"></div>
             </div>
             
-            <button class="numbers-audio-btn" onclick="playNumberAudio()" title="Play Audio">🔊</button>
+            <button class="numbers-audio-btn" onclick="playNumberAudio()" title="Play Audio" aria-label="Play number audio">🔊</button>
             
             <div class="digit-display" id="digitDisplay"></div>
             
-            <input type="text" inputmode="numeric" class="number-input" id="numberInput" autocomplete="off">
+            <input type="text" inputmode="numeric" class="number-input" id="numberInput" autocomplete="off" aria-label="Type the number you hear">
             
             <div class="numbers-message" id="numbersMessage">Listen and type the number</div>
         </div>

@@ -152,3 +152,10 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
     0% { background: rgba(216, 59, 1, 0.2); }
     100% { background: white; }
 }
+
+/* TOASTS */
+#toastContainer { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 1000; pointer-events: none; }
+.toast { background: #333; color: white; padding: 12px 22px; border-radius: 25px; font-size: 0.95rem; font-weight: 300; box-shadow: 0 4px 15px rgba(0,0,0,0.25); max-width: 90vw; text-align: center; opacity: 0; transform: translateY(10px); transition: opacity 0.3s, transform 0.3s; }
+.toast-visible { opacity: 1; transform: translateY(0); }
+.toast-error { background: var(--warning); }
+.toast-info { background: var(--primary); }
