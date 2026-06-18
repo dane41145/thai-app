@@ -556,6 +556,7 @@ function fitText(el, opts = {}) {
         minPx = 14,
         lineHeight = 1.3,
         preferSingleLine = false,
+        singleLineMinPx = 40,
         reserveTop = 8,
         reserveBottom = 8,
     } = opts;
@@ -600,11 +601,20 @@ function fitText(el, opts = {}) {
         return best;
     };
 
-    // Keep short words on a single line; fall back to wrapping only if even the
-    // smallest size can't fit on one line (e.g. long AI-generated sentences).
-    const wrap = !(preferSingleLine && fits(minPx, false));
-    el.style.whiteSpace = wrap ? 'normal' : 'nowrap';
-    el.style.fontSize = search(wrap) + 'px';
+    // Keep short single words on one line so they don't break mid-word — but
+    // only when that still yields a readable size. A long Thai sentence has no
+    // spaces between words either, yet must wrap; forcing it onto one line is
+    // what shrank example sentences to a tiny single line.
+    if (preferSingleLine) {
+        const singleBest = search(false);
+        if (singleBest >= singleLineMinPx) {
+            el.style.whiteSpace = 'nowrap';
+            el.style.fontSize = singleBest + 'px';
+            return;
+        }
+    }
+    el.style.whiteSpace = 'normal';
+    el.style.fontSize = search(true) + 'px';
 }
 
 function updateCardContent(skipAudio = false) {
