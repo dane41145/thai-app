@@ -159,3 +159,30 @@ h2 { margin: 0; color: var(--text); line-height: 1.2; text-align: center; max-wi
 .toast-visible { opacity: 1; transform: translateY(0); }
 .toast-error { background: var(--warning); }
 .toast-info { background: var(--primary); }
+
+/* CUSTOM DECK */
+#customMenu { width: 100%; max-width: 900px; display: none; flex-direction: column; gap: 12px; align-items: stretch; padding: 0 20px; box-sizing: border-box; }
+#customMenu h1, #customMenu p { align-self: center; }
+.custom-deck-entry { border-bottom: 4px solid var(--primary); }
+.custom-deck-entry .deck-title { color: var(--primary); }
+.custom-bar { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: space-between; background: white; padding: 12px 18px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+.count-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.count-label { color: #666; font-weight: 300; }
+.count-btn { border: 2px solid #e0e0e0; background: white; color: #555; padding: 6px 16px; border-radius: 20px; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 300; font-size: 1rem; transition: all 0.2s; }
+.count-btn:hover { border-color: var(--primary); }
+.count-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.custom-select-actions { display: flex; gap: 10px; }
+.link-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 300; font-size: 0.95rem; }
+.link-btn:hover { text-decoration: underline; }
+.custom-deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; max-height: 50vh; overflow-y: auto; padding: 4px; }
+.custom-deck-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: white; padding: 12px 14px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 2px solid transparent; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.custom-deck-card:hover { border-color: #cfe4f6; }
+.custom-deck-card.selected { border-color: var(--primary); background: #eaf4fd; }
+.cd-name { font-weight: 300; color: var(--text); font-size: 0.95rem; }
+.cd-count { background: #eee; color: #777; border-radius: 12px; padding: 2px 8px; font-size: 0.75rem; flex-shrink: 0; }
+.custom-deck-card.selected .cd-count { background: var(--primary); color: white; }
+.custom-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 6px 4px 24px; }
+.custom-summary { color: #666; font-weight: 300; }
+.start-custom-btn { background: var(--success); color: white; border: none; padding: 12px 36px; border-radius: 30px; font-size: 1.1rem; font-weight: 300; cursor: pointer; font-family: 'Lexend', sans-serif; box-shadow: 0 4px 12px rgba(16,124,16,0.25); transition: opacity 0.2s, transform 0.1s; }
+.start-custom-btn:hover { transform: translateY(-2px); }
+.start-custom-btn:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; transform: none; }

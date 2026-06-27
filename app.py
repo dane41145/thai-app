@@ -312,6 +312,42 @@ def get_vocab(deck_id):
     deck = MEMORY_DECKS.get(deck_id)
     return jsonify(deck['words'] if deck else [])
 
+@app.route('/custom_deck', methods=['POST'])
+def custom_deck():
+    """Build an ad-hoc review deck: pool cards from the chosen vocab decks,
+    de-duplicate (Arc/Archive overlap heavily), shuffle, and return up to
+    `count` of them."""
+    data = request.get_json(silent=True) or {}
+    deck_ids = data.get('deck_ids', [])
+    try:
+        count = int(data.get('count', 50))
+    except (ValueError, TypeError):
+        count = 50
+    count = max(1, min(count, 500))
+
+    if not isinstance(deck_ids, list) or not deck_ids:
+        return jsonify({'error': 'No decks selected'}), 400
+
+    pool = []
+    seen = set()
+    for did in deck_ids:
+        deck = MEMORY_DECKS.get(did)
+        if not deck or deck['category'] != 'vocab':
+            continue
+        for w in deck['words']:
+            key = (w['thai'], w['eng'])
+            if key not in seen:
+                seen.add(key)
+                pool.append(w)
+
+    random.shuffle(pool)
+    selected = pool[:count]
+    return jsonify({
+        'words': selected,
+        'total_available': len(pool),
+        'count': len(selected),
+    })
+
 @app.route('/generate_sentences', methods=['POST'])
 @limiter.limit("5/minute")
 def generate_sentences():

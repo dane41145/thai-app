@@ -34,6 +34,33 @@
         <div id="deckListArea" class="deck-grid"></div>
     </div>
 
+    <div id="customMenu">
+        <button class="back-nav-btn" onclick="showDecks('vocab')">🔙 Back to Decks</button>
+        <h1 style="color: #444; margin-bottom: 6px; font-weight: 200;">Custom Deck</h1>
+        <p style="color:#888; margin-top:0; font-weight:300; text-align:center;">Pick decks to pull random cards from, then a size.</p>
+
+        <div class="custom-bar">
+            <div class="count-group" id="countGroup">
+                <span class="count-label">Cards:</span>
+                <button class="count-btn" data-count="25">25</button>
+                <button class="count-btn active" data-count="50">50</button>
+                <button class="count-btn" data-count="75">75</button>
+                <button class="count-btn" data-count="100">100</button>
+            </div>
+            <div class="custom-select-actions">
+                <button class="link-btn" onclick="selectAllCustomDecks(true)">Select all</button>
+                <button class="link-btn" onclick="selectAllCustomDecks(false)">Clear</button>
+            </div>
+        </div>
+
+        <div id="customDeckList" class="custom-deck-grid"></div>
+
+        <div class="custom-footer">
+            <span id="customSummary" class="custom-summary">No decks selected</span>
+            <button id="startCustomBtn" class="start-custom-btn" onclick="startCustomDeck()" disabled>Start</button>
+        </div>
+    </div>
+
     <div id="gameContainer">
         <div class="controls" id="topControls">
             <button class="home-btn" onclick="goHome()" title="Back to Decks" aria-label="Back to decks">🏠</button>

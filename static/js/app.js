@@ -20,6 +20,8 @@ let currentMode = 'thai_front';
 let currentCategory = 'vocab';
 let currentDeckName = '';
 let currentDeckId = '';
+let selectedCustomDecks = new Set(); // gids chosen for a custom deck
+let customCount = 50;                // chosen card-count preset
 let isFlipped = false;
 let isAnimating = false;
 
@@ -125,6 +127,19 @@ async function showDecks(category) {
     const listArea = document.getElementById('deckListArea');
     listArea.innerHTML = '';
 
+    // Vocab decks get a "Custom Deck" builder entry at the top
+    if (category === 'vocab') {
+        const customCard = document.createElement('div');
+        customCard.className = 'deck-card custom-deck-entry';
+        customCard.innerHTML = `
+            <div class="deck-info">
+                <span class="deck-title">🎲 Custom Deck</span>
+                <span class="deck-count">mix &amp; match</span>
+            </div>`;
+        customCard.onclick = () => showCustomBuilder();
+        listArea.appendChild(customCard);
+    }
+
     if (filtered.length === 0) {
         listArea.innerHTML = '<div style="color:#888;">No decks found.</div>';
     } else {
@@ -184,6 +199,98 @@ async function showDecks(category) {
 
     document.getElementById('categoryMenu').style.display = 'none';
     document.getElementById('deckMenu').style.display = 'flex';
+}
+
+// ========== CUSTOM DECK ==========
+function showCustomBuilder() {
+    renderCustomDeckList();
+    updateCustomSummary();
+    document.getElementById('categoryMenu').style.display = 'none';
+    document.getElementById('deckMenu').style.display = 'none';
+    document.getElementById('customMenu').style.display = 'flex';
+}
+
+function renderCustomDeckList() {
+    const listArea = document.getElementById('customDeckList');
+    listArea.innerHTML = '';
+    allDecksData.filter(d => d.category === 'vocab').forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'custom-deck-card' + (selectedCustomDecks.has(d.gid) ? ' selected' : '');
+        div.innerHTML = `<span class="cd-name">${d.name}</span><span class="cd-count">${d.count}</span>`;
+        div.onclick = () => toggleCustomDeck(d.gid, div);
+        listArea.appendChild(div);
+    });
+}
+
+function toggleCustomDeck(gid, el) {
+    if (selectedCustomDecks.has(gid)) {
+        selectedCustomDecks.delete(gid);
+        el.classList.remove('selected');
+    } else {
+        selectedCustomDecks.add(gid);
+        el.classList.add('selected');
+    }
+    updateCustomSummary();
+}
+
+function selectAllCustomDecks(select) {
+    const vocabDecks = allDecksData.filter(d => d.category === 'vocab');
+    selectedCustomDecks = new Set(select ? vocabDecks.map(d => d.gid) : []);
+    renderCustomDeckList();
+    updateCustomSummary();
+}
+
+function updateCustomSummary() {
+    const n = selectedCustomDecks.size;
+    const available = allDecksData
+        .filter(d => d.category === 'vocab' && selectedCustomDecks.has(d.gid))
+        .reduce((sum, d) => sum + d.count, 0);
+    document.getElementById('customSummary').innerText =
+        n === 0 ? 'No decks selected' : `${n} deck${n > 1 ? 's' : ''} · up to ${available} cards`;
+    document.getElementById('startCustomBtn').disabled = n === 0;
+}
+
+function setupCustomCountButtons() {
+    document.querySelectorAll('#countGroup .count-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('#countGroup .count-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            customCount = parseInt(btn.dataset.count, 10);
+        };
+    });
+}
+
+async function startCustomDeck() {
+    if (selectedCustomDecks.size === 0) return;
+    showLoading('Building your custom deck…');
+    try {
+        const res = await fetch('/custom_deck', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ deck_ids: [...selectedCustomDecks], count: customCount })
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(e.error || 'Failed to build deck');
+        }
+        const data = await res.json();
+        if (!data.words || data.words.length === 0) throw new Error('No cards found');
+
+        fullVocab = data.words;
+        currentCategory = 'custom';
+        currentDeckId = 'custom';
+        currentDeckName = `🎲 Custom · ${data.count}`;
+        document.getElementById('deckTitle').innerText = currentDeckName;
+
+        hideLoading();
+        document.getElementById('customMenu').style.display = 'none';
+        document.getElementById('modeToggle').style.display = 'flex';
+        document.getElementById('gameContainer').style.display = 'flex';
+        switchMode('thai_front');
+    } catch (err) {
+        hideLoading();
+        showToast('Could not build custom deck: ' + err.message);
+    }
 }
 
 function sleep(ms) {
@@ -397,6 +504,9 @@ function goHome() {
     if (currentCategory === 'letters' || currentCategory === 'speaking') {
         // Go back to main menu for letters and speaking
         document.getElementById('categoryMenu').style.display = 'flex';
+    } else if (currentCategory === 'custom') {
+        // Custom decks live under the vocab deck list
+        showDecks('vocab');
     } else {
         // Go back to deck selection for vocab/script - refresh to show updated progress
         showDecks(currentCategory);
@@ -660,8 +770,8 @@ function updateCardContent(skipAudio = false) {
         });
     }
 
-    // === 1. VOCAB LOGIC ===
-    if (currentCategory === 'vocab') {
+    // === 1. VOCAB LOGIC (custom decks render the same way) ===
+    if (currentCategory === 'vocab' || currentCategory === 'custom') {
         if (currentMode === 'thai_front') {
             // Front
             frontText.innerText = cardData.thai;
@@ -781,7 +891,7 @@ function updateCardContent(skipAudio = false) {
     }
 
     // Auto-play audio for Thai front mode in vocab and script
-    if (!skipAudio && (currentCategory === 'vocab' || currentCategory === 'script') && currentMode === 'thai_front') playCurrentAudio();
+    if (!skipAudio && (currentCategory === 'vocab' || currentCategory === 'custom' || currentCategory === 'script') && currentMode === 'thai_front') playCurrentAudio();
 }
 
 function renderCard() { updateCardContent(); }
@@ -792,8 +902,9 @@ function showVictory() {
     document.getElementById('topControls').style.visibility = 'hidden';
     document.getElementById('victoryArea').style.display = 'flex';
     
-    // Mark this deck/mode as complete (skip for letters and speaking)
-    if (currentCategory !== 'letters' && currentCategory !== 'speaking') {
+    // Mark this deck/mode as complete (skip for letters, speaking, and the
+    // ephemeral custom decks, which have no persistent progress)
+    if (currentCategory !== 'letters' && currentCategory !== 'speaking' && currentCategory !== 'custom') {
         markDeckComplete();
     }
 }
@@ -1239,6 +1350,8 @@ window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(refitCurrentCard, 150);
 });
+
+setupCustomCountButtons();
 
 // Initialize the app
 initApp();
