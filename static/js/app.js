@@ -1341,8 +1341,23 @@ function refitCurrentCard() {
     }
 }
 
-if (document.fonts && document.fonts.ready) {
+if (document.fonts) {
+    // The Thai font (Mali) loads lazily — only when the first Thai card renders —
+    // so it can swap in *after* fitText has already measured the fallback font,
+    // overflowing the card on a cold first load. document.fonts.ready resolves
+    // once (often before Mali is even requested), so we also:
+    //   1. proactively kick off loading Mali/Lexend now, and
+    //   2. re-fit on every loadingdone event (fires each time a font finishes).
     document.fonts.ready.then(refitCurrentCard);
+    if (document.fonts.addEventListener) {
+        document.fonts.addEventListener('loadingdone', refitCurrentCard);
+    }
+    if (document.fonts.load) {
+        Promise.all([
+            document.fonts.load('300 16px Mali', 'ก'),
+            document.fonts.load('200 16px Lexend'),
+        ]).then(refitCurrentCard).catch(() => {});
+    }
 }
 
 let resizeTimer = null;
