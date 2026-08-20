@@ -88,6 +88,15 @@ const THAI_LETTERS = [
     { letter: "ฮ", fullName: "ฮ นกฮูก", letterClass: "LC", meaning: "owl" }
 ];
 
+// Top-level screens are mutually exclusive; switching via this helper
+// guarantees the previous one is hidden (forgetting that left e.g. the
+// custom-deck builder stacked on top of the deck list).
+const SCREEN_IDS = ['categoryMenu', 'deckMenu', 'customMenu', 'gameContainer', 'numbersContainer'];
+function showScreen(id) {
+    SCREEN_IDS.forEach(sid =>
+        document.getElementById(sid).style.display = sid === id ? 'flex' : 'none');
+}
+
 async function initApp() {
     try {
         // Fetch decks and progress in parallel
@@ -100,9 +109,7 @@ async function initApp() {
         console.log("Decks loaded:", allDecksData);
         console.log("Progress loaded:", progressData);
         hideLoading();
-        document.getElementById('categoryMenu').style.display = 'flex';
-        document.getElementById('deckMenu').style.display = 'none';
-        document.getElementById('gameContainer').style.display = 'none';
+        showScreen('categoryMenu');
     } catch (err) {
         document.getElementById('loadingText').innerText = "Connection Failed: " + err.message;
     }
@@ -197,17 +204,14 @@ async function showDecks(category) {
         });
     }
 
-    document.getElementById('categoryMenu').style.display = 'none';
-    document.getElementById('deckMenu').style.display = 'flex';
+    showScreen('deckMenu');
 }
 
 // ========== CUSTOM DECK ==========
 function showCustomBuilder() {
     renderCustomDeckList();
     updateCustomSummary();
-    document.getElementById('categoryMenu').style.display = 'none';
-    document.getElementById('deckMenu').style.display = 'none';
-    document.getElementById('customMenu').style.display = 'flex';
+    showScreen('customMenu');
 }
 
 function renderCustomDeckList() {
@@ -283,9 +287,8 @@ async function startCustomDeck() {
         document.getElementById('deckTitle').innerText = currentDeckName;
 
         hideLoading();
-        document.getElementById('customMenu').style.display = 'none';
         document.getElementById('modeToggle').style.display = 'flex';
-        document.getElementById('gameContainer').style.display = 'flex';
+        showScreen('gameContainer');
         switchMode('thai_front');
     } catch (err) {
         hideLoading();
@@ -352,8 +355,7 @@ async function resetDeckProgress(deckId) {
 }
 
 function goBackToCategories() {
-    document.getElementById('deckMenu').style.display = 'none';
-    document.getElementById('categoryMenu').style.display = 'flex';
+    showScreen('categoryMenu');
 }
 
 // ========== LETTERS MODE ==========
@@ -375,9 +377,8 @@ function startLettersMode() {
     document.getElementById('btnThai').innerText = '📖 Info';
     document.getElementById('btnEng').innerText = '🎯 Class';
     document.getElementById('deckTitle').innerText = 'Letters';
-    
-    document.getElementById('categoryMenu').style.display = 'none';
-    document.getElementById('gameContainer').style.display = 'flex';
+
+    showScreen('gameContainer');
     switchMode('thai_front');
 }
 
@@ -418,9 +419,8 @@ async function startSpeakingMode() {
         // Hide mode toggle for speaking (only one mode)
         document.getElementById('modeToggle').style.display = 'none';
         document.getElementById('deckTitle').innerText = 'Speaking';
-        
-        document.getElementById('categoryMenu').style.display = 'none';
-        document.getElementById('gameContainer').style.display = 'flex';
+
+        showScreen('gameContainer');
         
         // Start without shuffling (sentences are already randomized by AI)
         deck = [...fullVocab];
@@ -487,10 +487,9 @@ async function loadDeckData(gid, deckName) {
 function startGameUI() {
     // Show mode toggle for vocab/script
     document.getElementById('modeToggle').style.display = 'flex';
-    
-    document.getElementById('deckMenu').style.display = 'none';
-    document.getElementById('gameContainer').style.display = 'flex';
-    switchMode('thai_front'); 
+
+    showScreen('gameContainer');
+    switchMode('thai_front');
 }
 
 function goHome() {
@@ -503,7 +502,7 @@ function goHome() {
     
     if (currentCategory === 'letters' || currentCategory === 'speaking') {
         // Go back to main menu for letters and speaking
-        document.getElementById('categoryMenu').style.display = 'flex';
+        showScreen('categoryMenu');
     } else if (currentCategory === 'custom') {
         // Custom decks live under the vocab deck list
         showDecks('vocab');
@@ -1039,11 +1038,11 @@ async function generateNumbersChallenges() {
 async function startNumbersGame() {
     document.getElementById('categoryMenu').style.display = 'none';
     await generateNumbersChallenges();
-    
+
     currentNumberLevel = 0;
     numbersGameActive = true;
-    
-    document.getElementById('numbersContainer').style.display = 'flex';
+
+    showScreen('numbersContainer');
     document.getElementById('numbersCard').style.display = 'flex';
     document.getElementById('numbersVictory').style.display = 'none';
     
@@ -1198,8 +1197,7 @@ function restartNumbersGame() {
 
 function exitNumbersGame() {
     numbersGameActive = false;
-    document.getElementById('numbersContainer').style.display = 'none';
-    document.getElementById('categoryMenu').style.display = 'flex';
+    showScreen('categoryMenu');
 }
 
 // Handle keyboard input for numbers game AND flashcards
