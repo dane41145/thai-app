@@ -5,6 +5,7 @@ without importing the web app (which fetches all decks from Google Sheets
 at import time).
 """
 import hashlib
+import random
 import re
 import threading
 from collections import OrderedDict
@@ -36,6 +37,44 @@ def compute_deck_hash(words):
     """Generate a short hash from deck content to detect changes."""
     content = '|'.join(w['thai'] + w.get('eng', '') for w in words)
     return hashlib.md5(content.encode()).hexdigest()[:8]
+
+
+# ==========================================
+# CUSTOM DECKS
+# ==========================================
+def pool_unique_words(decks):
+    """Pool the words of several decks into one list, one card per Thai word.
+
+    The key is the Thai text alone: the same word is often entered in several
+    decks with slightly different English ("stingy" vs "stingy, cheap"), and
+    keying on (thai, eng) let those through as duplicate cards. The first
+    occurrence wins, so callers should pass decks in display order.
+    """
+    pool = []
+    seen = set()
+    for deck in decks:
+        for w in deck['words']:
+            if w['thai'] not in seen:
+                seen.add(w['thai'])
+                pool.append(w)
+    return pool
+
+
+def sample_preferring_unseen(pool, count, exclude=(), rng=random):
+    """Random sample of up to `count` cards (None = the whole pool) that uses
+    cards whose Thai is in `exclude` only when the rest of the pool runs out.
+
+    Returns (cards, recycled); recycled is True when excluded cards had to be
+    reused, i.e. the caller has now cycled through the whole pool.
+    """
+    exclude = set(exclude)
+    shuffled = list(pool)
+    rng.shuffle(shuffled)
+    shuffled.sort(key=lambda w: w['thai'] in exclude)  # stable: fresh cards first
+    selected = shuffled if count is None else shuffled[:count]
+    recycled = any(w['thai'] in exclude for w in selected)
+    rng.shuffle(selected)  # don't leave the recycled cards bunched at the end
+    return selected, recycled
 
 
 # ==========================================

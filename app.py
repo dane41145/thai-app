@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from xml.sax.saxutils import escape
 
 from dotenv import load_dotenv
@@ -21,7 +21,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from thai_utils import LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai
+from thai_utils import (LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai,
+                        pool_unique_words, sample_preferring_unseen)
 
 load_dotenv()  # pull AZURE_KEY / AZURE_REGION / GEMINI_KEY from a local .env, if present
 
@@ -48,6 +49,9 @@ def ratelimit_handler(e):
 AZURE_KEY = os.environ.get('AZURE_KEY')
 AZURE_REGION = os.environ.get('AZURE_REGION', 'southeastasia')
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
+# gemini-2.0-flash was shut down on 2026-06-01; keep the model overridable so
+# the next retirement is a config change, not a code change.
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.5-flash')
 
 if not AZURE_KEY:
     print("⚠️ WARNING: AZURE_KEY environment variable not set!")
@@ -57,7 +61,8 @@ if not GEMINI_KEY:
 # Deck sources (sheet IDs + which tabs to load) live ONLY in config.json,
 # so there's a single source of truth. To add a new deck, add its tab name
 # in config.json — nothing in this file needs to change.
-CONFIG_FILE = "config.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.environ.get('CONFIG_FILE', os.path.join(BASE_DIR, 'config.json'))
 try:
     with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
         SOURCES = json.load(f)
@@ -69,7 +74,12 @@ except json.JSONDecodeError as e:
     print(f"❌ FATAL: Could not parse {CONFIG_FILE}: {e}")
     sys.exit(1)
 
-PROGRESS_FILE = "progress.json"
+# Progress lives in a JSON file. On Render the app's own directory is wiped on
+# every deploy, so point PROGRESS_FILE at a persistent disk there (see README).
+PROGRESS_FILE = os.environ.get('PROGRESS_FILE', os.path.join(BASE_DIR, 'progress.json'))
+if not os.path.exists(PROGRESS_FILE):
+    print(f"ℹ️ {PROGRESS_FILE} not found — starting with empty progress. "
+          "If this is a redeploy, the file was wiped: set PROGRESS_FILE to a path on a persistent disk.")
 
 # Network timeouts (connect, read) in seconds, so a hung request can't stall us.
 SHEET_TIMEOUT = (5, 15)
@@ -178,7 +188,10 @@ def save_progress(progress):
     """Save progress atomically: write a unique temp file, then rename it over
     the real one. A crash mid-write can no longer corrupt the file (which the
     old code would then silently swallow, resetting all progress)."""
-    fd, tmp_path = tempfile.mkstemp(prefix='progress_', suffix='.tmp', dir='.')
+    # Same directory as the target: os.replace is only atomic within one
+    # filesystem, and PROGRESS_FILE may live on a mounted disk.
+    target_dir = os.path.dirname(os.path.abspath(PROGRESS_FILE))
+    fd, tmp_path = tempfile.mkstemp(prefix='progress_', suffix='.tmp', dir=target_dir)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump(progress, f, indent=2, ensure_ascii=False)
@@ -247,8 +260,11 @@ def load_all_decks():
     """Fetch every configured tab in parallel and atomically swap the result in.
 
     Runs at startup and on POST /refresh. Individual tab failures are logged and
-    skipped (never fatal); a hung request is bounded by SHEET_TIMEOUT.
+    never fatal: a deck that fails to fetch keeps its previous copy (if any), so
+    a blip during /refresh can't make a deck vanish until the next refresh.
+    A hung request is bounded by SHEET_TIMEOUT.
     """
+    global MEMORY_DECKS
     print("📥 Loading all decks (parallel)...")
     tasks = [
         (category, config['sheet_id'], tab_name)
@@ -260,13 +276,19 @@ def load_all_decks():
         new_decks = {}
         with ThreadPoolExecutor(max_workers=8) as pool:
             futures = [pool.submit(_fetch_one_deck, c, s, t) for (c, s, t) in tasks]
-            for future in as_completed(futures):
+            # Collect in submission order, NOT as_completed: dicts keep insertion
+            # order, so this is what makes /decks list tabs in config.json order
+            # instead of whichever-fetch-finished-first order.
+            for future in futures:
                 deck_id, deck = future.result()
+                if deck is None:
+                    deck = MEMORY_DECKS.get(deck_id)
+                    if deck is not None:
+                        print(f"      ↩️  [{deck['name']}]: keeping previous copy")
                 if deck is not None:
                     new_decks[deck_id] = deck
 
         # Atomic swap: readers always see a complete, consistent deck set.
-        global MEMORY_DECKS
         MEMORY_DECKS = new_decks
 
     print(f"📚 Loaded {len(new_decks)} of {len(tasks)} decks.")
@@ -315,37 +337,52 @@ def get_vocab(deck_id):
 @app.route('/custom_deck', methods=['POST'])
 def custom_deck():
     """Build an ad-hoc review deck: pool cards from the chosen vocab decks,
-    de-duplicate (Arc/Archive overlap heavily), shuffle, and return up to
-    `count` of them."""
+    de-duplicate by Thai word (Arc/Archive overlap heavily), and return a
+    random `count` of them (`count: "all"` = the whole pool).
+
+    `preview: true` returns only the counts, so the builder can show how many
+    unique cards a selection really holds. `exclude` is a list of Thai words
+    already seen in earlier samples; they're only reused once the rest of the
+    pool is exhausted (the response then says `recycled: true`).
+    """
     data = request.get_json(silent=True) or {}
     deck_ids = data.get('deck_ids', [])
-    try:
-        count = int(data.get('count', 50))
-    except (ValueError, TypeError):
-        count = 50
-    count = max(1, min(count, 500))
 
     if not isinstance(deck_ids, list) or not deck_ids:
         return jsonify({'error': 'No decks selected'}), 400
 
-    pool = []
-    seen = set()
-    for did in deck_ids:
-        deck = MEMORY_DECKS.get(did)
-        if not deck or deck['category'] != 'vocab':
-            continue
-        for w in deck['words']:
-            key = (w['thai'], w['eng'])
-            if key not in seen:
-                seen.add(key)
-                pool.append(w)
+    raw_count = data.get('count', 50)
+    if raw_count == 'all':
+        count = None
+    else:
+        try:
+            count = int(raw_count)
+        except (ValueError, TypeError):
+            count = 50
+        count = max(1, min(count, 500))
 
-    random.shuffle(pool)
-    selected = pool[:count]
+    # Walk MEMORY_DECKS (config order) rather than the client's click order, so
+    # which copy of a duplicated word wins doesn't depend on selection order.
+    wanted = {d for d in deck_ids if isinstance(d, str)}
+    pool = pool_unique_words(
+        deck for did, deck in MEMORY_DECKS.items()
+        if did in wanted and deck['category'] == 'vocab'
+    )
+
+    if data.get('preview'):
+        will_use = len(pool) if count is None else min(count, len(pool))
+        return jsonify({'words': [], 'total_available': len(pool), 'count': will_use})
+
+    exclude = data.get('exclude', [])
+    if not isinstance(exclude, list):
+        exclude = []
+    selected, recycled = sample_preferring_unseen(
+        pool, count, (t for t in exclude[:5000] if isinstance(t, str)))
     return jsonify({
         'words': selected,
         'total_available': len(pool),
         'count': len(selected),
+        'recycled': recycled,
     })
 
 @app.route('/generate_sentences', methods=['POST'])
@@ -394,43 +431,59 @@ Respond in this exact JSON format (no other text):
 
 Generate 10 sentences now:"""
 
+    # The key goes in a header, never the URL: requests puts the URL in its
+    # exception messages, which used to be echoed to the browser via str(e).
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
     try:
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-        
-        response = requests.post(gemini_url, json={
+        response = requests.post(gemini_url, headers={'x-goog-api-key': GEMINI_KEY}, json={
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.7,
                 "maxOutputTokens": 2048
             }
         }, timeout=30)
-        
-        response.raise_for_status()
+
+        if response.status_code != 200:
+            # Full detail server-side only; the client gets the status code.
+            print(f"❌ Gemini API HTTP {response.status_code}: {response.text[:500]}")
+            return jsonify({'error': f'Gemini returned HTTP {response.status_code}'
+                                     f' (model: {GEMINI_MODEL})'}), 502
         result = response.json()
-        
+
         # Extract the generated text
         generated_text = result['candidates'][0]['content']['parts'][0]['text']
-        
+
         # Parse JSON from response (handle markdown code blocks)
         json_match = re.search(r'\[.*\]', generated_text, re.DOTALL)
-        if json_match:
-            sentences = json.loads(json_match.group())
-        else:
-            return jsonify({'error': 'Could not parse Gemini response'}), 500
-        
-        # Add audio_text field for TTS
-        for sentence in sentences:
-            # Remove spaces for audio (Thai TTS handles it better without spaces)
-            sentence['audio_text'] = sentence['thai'].replace(' ', '')
-        
+        if not json_match:
+            print(f"❌ Gemini response had no JSON array: {generated_text[:300]}")
+            return jsonify({'error': 'Could not parse Gemini response'}), 502
+        raw = json.loads(json_match.group())
+
+        # Keep only well-formed entries; the model occasionally pads the list.
+        sentences = []
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict):
+                continue
+            thai, english = item.get('thai'), item.get('english')
+            if isinstance(thai, str) and isinstance(english, str) and thai.strip() and english.strip():
+                sentences.append({
+                    'thai': thai.strip(),
+                    'english': english.strip(),
+                    # Remove spaces for audio (Thai TTS handles it better without spaces)
+                    'audio_text': thai.replace(' ', ''),
+                })
+        if not sentences:
+            return jsonify({'error': 'Gemini returned no usable sentences'}), 502
+
         print(f"✅ Generated {len(sentences)} sentences")
         return jsonify(sentences)
-        
+
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Gemini API timeout'}), 504
     except Exception as e:
-        print(f"❌ Gemini API error: {e}")
-        return jsonify({'error': str(e)}), 500
+        print(f"❌ Gemini API error: {type(e).__name__}: {e}")
+        return jsonify({'error': 'Sentence generation failed'}), 502
 
 @app.route('/speak', methods=['POST'])
 @limiter.limit("60/minute")

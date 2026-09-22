@@ -41,6 +41,14 @@ Keys enable the paid features:
 
 On Render, set these as environment variables in the dashboard instead.
 
+Optional settings:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model for Speaking mode; change here when Google retires one |
+| `PROGRESS_FILE` | `./progress.json` | where per-deck progress is stored (see Deployment notes) |
+| `CONFIG_FILE` | `./config.json` | deck source list |
+
 ## Managing decks
 
 `config.json` is the single source of truth: each category maps a Google Sheet
@@ -53,7 +61,8 @@ restarting. Sheet columns: `Thai`, `Pronunciation`, `English`, and optional
 
 | Route | Notes |
 |---|---|
-| `GET /decks`, `GET /vocab/<deck_id>` | deck list / words |
+| `GET /decks`, `GET /vocab/<deck_id>` | deck list / words (config.json order) |
+| `POST /custom_deck` `{deck_ids, count, exclude?, preview?}` | random sample across vocab decks, one card per Thai word; `count` is a number or `"all"`; `preview: true` returns counts only; `exclude` lists Thai words to avoid until the pool is exhausted (`recycled: true` when it was) |
 | `POST /refresh` | reload decks from Sheets (2/min) |
 | `POST /speak` `{text, speed}` | TTS, ≤300 chars (60/min per IP) |
 | `POST /speak_number` `{number, speed}` | Thai number TTS (30/min) |
@@ -73,9 +82,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Covers the pure logic in `thai_utils.py`: Thai number spelling (including the
-เอ็ด and ยี่สิบ irregulars), the audio LRU cache, TTS text cleanup, and deck
-hashing. The tests run without network access — they don't import the app.
+`tests/test_thai_utils.py` covers the pure logic in `thai_utils.py`: Thai
+number spelling (including the เอ็ด and ยี่สิบ irregulars), the audio LRU
+cache, TTS text cleanup, deck hashing, and custom-deck pooling/sampling.
+`tests/test_routes.py` exercises the Flask routes with canned sheet data
+(`requests.get` is stubbed, `CONFIG_FILE`/`PROGRESS_FILE` point at a temp
+dir). Neither needs network access or API keys.
 
 ## Deployment notes (Render)
 
@@ -83,6 +95,10 @@ hashing. The tests run without network access — they don't import the app.
   one worker: the audio cache, rate limits, and MP3 job registry live in
   process memory.
 - `nixpacks.toml` installs `ffmpeg`, required for MP3 export.
-- `progress.json` sits on ephemeral disk — it is wiped on redeploy.
+- **Progress is lost on every deploy unless you give it a disk.** The app
+  directory is rebuilt from git on each deploy, and `progress.json` isn't in
+  git. To keep progress: add a Render *Disk* to the service (e.g. mounted at
+  `/var/data`) and set `PROGRESS_FILE=/var/data/progress.json`. The server
+  logs an `ℹ️ … not found` line at startup whenever it's starting from empty.
 - Decks reload on every deploy; after editing the spreadsheet you can
   `POST /refresh` instead of redeploying.

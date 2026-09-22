@@ -40,23 +40,25 @@
         <p style="color:#888; margin-top:0; font-weight:300; text-align:center;">Pick decks to pull random cards from, then a size.</p>
 
         <div class="custom-bar">
-            <div class="count-group" id="countGroup">
+            <div class="count-group" id="countGroup" role="radiogroup" aria-label="Number of cards">
                 <span class="count-label">Cards:</span>
-                <button class="count-btn" data-count="25">25</button>
-                <button class="count-btn active" data-count="50">50</button>
-                <button class="count-btn" data-count="75">75</button>
-                <button class="count-btn" data-count="100">100</button>
+                <button class="count-btn" role="radio" data-count="25">25</button>
+                <button class="count-btn" role="radio" data-count="50">50</button>
+                <button class="count-btn" role="radio" data-count="75">75</button>
+                <button class="count-btn" role="radio" data-count="100">100</button>
+                <button class="count-btn" role="radio" data-count="all">All</button>
             </div>
             <div class="custom-select-actions">
                 <button class="link-btn" onclick="selectAllCustomDecks(true)">Select all</button>
+                <button class="link-btn" onclick="selectCompletedCustomDecks()" title="Select every deck you've finished in both modes">Completed</button>
                 <button class="link-btn" onclick="selectAllCustomDecks(false)">Clear</button>
             </div>
         </div>
 
-        <div id="customDeckList" class="custom-deck-grid"></div>
+        <div id="customDeckList" class="custom-deck-groups"></div>
 
         <div class="custom-footer">
-            <span id="customSummary" class="custom-summary">No decks selected</span>
+            <span id="customSummary" class="custom-summary" aria-live="polite">No decks selected</span>
             <button id="startCustomBtn" class="start-custom-btn" onclick="startCustomDeck()" disabled>Start</button>
         </div>
     </div>
@@ -92,8 +94,10 @@
         <div class="victory-screen" id="victoryArea">
             <div style="font-size: 80px; margin-bottom: 20px;">🎉</div>
             <h1>Deck Complete!</h1>
-            <button class="restart-btn" onclick="goHome()" style="margin-bottom: 10px;">Select Another Deck</button>
-            <button class="restart-btn secondary-btn" onclick="restartRound()">Start Over</button>
+            <!-- Custom decks only: draw a fresh random sample from the same selection -->
+            <button id="victoryNewSampleBtn" class="restart-btn" onclick="startCustomDeck(true)" style="display:none;">🎲 New Sample</button>
+            <button id="victoryBackBtn" class="restart-btn" onclick="goHome()" style="margin-bottom: 10px;">Select Another Deck</button>
+            <button id="victoryRestartBtn" class="restart-btn secondary-btn" onclick="restartRound()">Start Over</button>
         </div>
 
         <div class="action-area" id="actionArea">

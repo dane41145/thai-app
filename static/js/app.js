@@ -1,4 +1,40 @@
-const audioCache = {};
+const audioCache = {};    // audio_text -> object URL of synthesised MP3
+const audioPending = {};  // audio_text -> in-flight fetch, so preload + play don't double-request
+
+// Fetch TTS for `text` (once), resolving to a playable object URL.
+function fetchAudio(text) {
+    if (audioCache[text]) return Promise.resolve(audioCache[text]);
+    if (audioPending[text]) return audioPending[text];
+    const p = fetch('/speak', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text, speed: 0.9})
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`TTS failed (${res.status})`);
+        return res.blob();
+    })
+    .then(blob => {
+        if (!blob.size) throw new Error('TTS returned empty audio');
+        // Only successful audio is cached — a failure here used to be cached
+        // as silence and mute that word for the rest of the session.
+        audioCache[text] = URL.createObjectURL(blob);
+        return audioCache[text];
+    })
+    .finally(() => { delete audioPending[text]; });
+    audioPending[text] = p;
+    return p;
+}
+
+// Warm the cache for the next few cards of the *shuffled* deck, so flipping
+// or advancing doesn't wait on Azure. (The old preload fetched the first five
+// rows of the sheet before the shuffle, so it rarely helped.)
+const PRELOAD_AHEAD = 4;
+function preloadUpcomingAudio() {
+    deck.slice(1, 1 + PRELOAD_AHEAD).forEach(card => {
+        if (card.audio_text) fetchAudio(card.audio_text).catch(() => {});
+    });
+}
 
 // One shared player: rapid taps restart the clip instead of layering copies,
 // and the .catch absorbs mobile autoplay blocks (no user gesture yet) instead
@@ -21,7 +57,9 @@ let currentCategory = 'vocab';
 let currentDeckName = '';
 let currentDeckId = '';
 let selectedCustomDecks = new Set(); // gids chosen for a custom deck
-let customCount = 50;                // chosen card-count preset
+let customCount = 50;                // chosen card-count preset: a number, or 'all'
+let customAvailable = null;          // unique cards in the selection, counted by the server (null = not known yet)
+let customSeenThai = new Set();      // cards dealt in earlier samples, so a new sample prefers fresh ones
 let isFlipped = false;
 let isAnimating = false;
 
@@ -35,6 +73,7 @@ const LONG_PRESS_DURATION = 2000; // 2 seconds
 
 // ========== NUMBERS GAME STATE ==========
 let numbersGameActive = false;
+let numbersSession = 0;         // bumped on start/exit so timers from an old game do nothing
 let numbersInputLocked = false; // Prevents input during transitions
 let currentNumberLevel = 0; // 0-6 for levels 1-7
 let numbersChallenges = []; // Array of {number: 123, audioUrl: '...'}
@@ -88,13 +127,25 @@ const THAI_LETTERS = [
     { letter: "ฮ", fullName: "ฮ นกฮูก", letterClass: "LC", meaning: "owl" }
 ];
 
+// Deck names come from spreadsheet tab titles; escape them before they go
+// into innerHTML so a stray & or < can't break (or inject into) the markup.
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // Top-level screens are mutually exclusive; switching via this helper
 // guarantees the previous one is hidden (forgetting that left e.g. the
 // custom-deck builder stacked on top of the deck list).
 const SCREEN_IDS = ['categoryMenu', 'deckMenu', 'customMenu', 'gameContainer', 'numbersContainer'];
 function showScreen(id) {
+    const changed = document.getElementById(id).style.display !== 'flex';
     SCREEN_IDS.forEach(sid =>
         document.getElementById(sid).style.display = sid === id ? 'flex' : 'none');
+    // Screens share one page scroll; without this, leaving a long list half-way
+    // down opens the next screen scrolled past its top bar. Not on a re-render
+    // of the same screen (e.g. resetting a deck), which should stay put.
+    if (changed) window.scrollTo(0, 0);
 }
 
 async function initApp() {
@@ -158,9 +209,10 @@ async function showDecks(category) {
             
             const div = document.createElement('div');
             div.className = 'deck-card';
+            const safeName = escapeHtml(d.name);
             div.innerHTML = `
                 <div class="deck-info">
-                    <span class="deck-title">${d.name}</span>
+                    <span class="deck-title">${safeName}</span>
                     <span class="deck-count">${d.count} cards</span>
                 </div>
                 <div class="deck-progress">
@@ -172,8 +224,8 @@ async function showDecks(category) {
                     </div>
                 </div>
                 <div class="deck-actions">
-                    <button class="deck-reset-btn" title="Reset progress" aria-label="Reset progress for ${d.name}" data-deck-id="${d.gid}">🔄</button>
-                    ${isVocab ? `<button class="deck-download-btn" title="Download MP3" aria-label="Download ${d.name} as MP3" data-deck-id="${d.gid}">⬇️</button>` : ''}
+                    <button class="deck-reset-btn" title="Reset progress" aria-label="Reset progress for ${safeName}" data-deck-id="${d.gid}">🔄</button>
+                    ${isVocab ? `<button class="deck-download-btn" title="Download MP3" aria-label="Download ${safeName} as MP3" data-deck-id="${d.gid}">⬇️</button>` : ''}
                 </div>
             `;
             
@@ -208,70 +260,262 @@ async function showDecks(category) {
 }
 
 // ========== CUSTOM DECK ==========
+const CUSTOM_PREFS_KEY = 'thaiCustomDeckPrefs';
+
+function vocabDecks() {
+    return allDecksData.filter(d => d.category === 'vocab');
+}
+
+// Remember the selection + size between visits. localStorage can throw
+// (private mode, blocked site data), and the builder must work without it.
+function loadCustomPrefs() {
+    try {
+        const prefs = JSON.parse(localStorage.getItem(CUSTOM_PREFS_KEY)) || {};
+        if (Array.isArray(prefs.decks)) selectedCustomDecks = new Set(prefs.decks);
+        if (document.querySelector(`#countGroup .count-btn[data-count="${prefs.count}"]`)) {
+            customCount = prefs.count;
+        }
+    } catch (e) { /* keep defaults */ }
+}
+
+function saveCustomPrefs() {
+    try {
+        localStorage.setItem(CUSTOM_PREFS_KEY,
+            JSON.stringify({ decks: [...selectedCustomDecks], count: customCount }));
+    } catch (e) { /* best-effort */ }
+}
+
 function showCustomBuilder() {
+    // Drop remembered decks that no longer exist (tab renamed/removed) — but
+    // not when the deck list itself failed to load, or we'd wipe the selection.
+    const vocab = vocabDecks();
+    if (vocab.length) {
+        const valid = new Set(vocab.map(d => d.gid));
+        selectedCustomDecks = new Set([...selectedCustomDecks].filter(gid => valid.has(gid)));
+    }
     renderCustomDeckList();
-    updateCustomSummary();
+    onCustomSelectionChanged();
     showScreen('customMenu');
+}
+
+// "Int18" → "Int", "Vocab 7" → "Vocab". Decks whose prefix is unique (Time,
+// Places, …) are collected into one "Other" group so they don't each get a header.
+function groupVocabDecks() {
+    const byPrefix = new Map();
+    vocabDecks().forEach(d => {
+        const prefix = d.name.replace(/\s*\d+$/, '');
+        if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
+        byPrefix.get(prefix).push(d);
+    });
+    const groups = [];
+    const loners = [];
+    byPrefix.forEach((decks, name) => {
+        if (decks.length > 1) groups.push({ name, decks });
+        else loners.push(...decks);
+    });
+    if (loners.length) groups.push({ name: 'Other', decks: loners });
+    return groups;
 }
 
 function renderCustomDeckList() {
     const listArea = document.getElementById('customDeckList');
     listArea.innerHTML = '';
-    allDecksData.filter(d => d.category === 'vocab').forEach(d => {
-        const div = document.createElement('div');
-        div.className = 'custom-deck-card' + (selectedCustomDecks.has(d.gid) ? ' selected' : '');
-        div.innerHTML = `<span class="cd-name">${d.name}</span><span class="cd-count">${d.count}</span>`;
-        div.onclick = () => toggleCustomDeck(d.gid, div);
-        listArea.appendChild(div);
+
+    groupVocabDecks().forEach(group => {
+        const section = document.createElement('section');
+        section.className = 'custom-group';
+        section.dataset.gids = JSON.stringify(group.decks.map(d => d.gid));
+
+        const header = document.createElement('div');
+        header.className = 'custom-group-header';
+        const name = document.createElement('span');
+        name.className = 'cg-name';
+        name.textContent = group.name;
+        const tally = document.createElement('span');
+        tally.className = 'cg-tally';
+        const toggle = document.createElement('button');
+        toggle.className = 'link-btn cg-toggle';
+        toggle.onclick = () => toggleCustomGroup(group.decks.map(d => d.gid));
+        header.append(name, tally, toggle);
+
+        const grid = document.createElement('div');
+        grid.className = 'custom-deck-grid';
+        group.decks.forEach(d => {
+            // Real buttons with checkbox semantics: focusable, Space/Enter
+            // toggle them, and screen readers announce the checked state.
+            const chip = document.createElement('button');
+            chip.className = 'custom-deck-card';
+            chip.setAttribute('role', 'checkbox');
+            chip.dataset.gid = d.gid;
+
+            const label = document.createElement('span');
+            label.className = 'cd-name';
+            label.textContent = d.name;
+
+            const progress = progressData[d.gid] || {};
+            const doneModes = (progress.thai ? 1 : 0) + (progress.eng ? 1 : 0);
+            if (doneModes) {
+                const mark = document.createElement('span');
+                mark.className = 'cd-done' + (doneModes === 2 ? '' : ' partial');
+                mark.textContent = doneModes === 2 ? '✓' : '◐';
+                mark.title = doneModes === 2 ? 'Completed in both modes' : 'Completed in one mode';
+                label.append(' ', mark);
+            }
+
+            const count = document.createElement('span');
+            count.className = 'cd-count';
+            count.textContent = d.count;
+
+            chip.append(label, count);
+            chip.onclick = () => toggleCustomDeck(d.gid);
+            grid.appendChild(chip);
+        });
+
+        section.append(header, grid);
+        listArea.appendChild(section);
     });
 }
 
-function toggleCustomDeck(gid, el) {
-    if (selectedCustomDecks.has(gid)) {
-        selectedCustomDecks.delete(gid);
-        el.classList.remove('selected');
-    } else {
-        selectedCustomDecks.add(gid);
-        el.classList.add('selected');
-    }
+// Reflect selectedCustomDecks in the existing DOM (rather than re-rendering,
+// which would drop keyboard focus and scroll position on every tap).
+function syncCustomSelectionUI() {
+    document.querySelectorAll('#customDeckList .custom-deck-card').forEach(chip => {
+        const on = selectedCustomDecks.has(chip.dataset.gid);
+        chip.classList.toggle('selected', on);
+        chip.setAttribute('aria-checked', on);
+    });
+    document.querySelectorAll('#customDeckList .custom-group').forEach(section => {
+        const gids = JSON.parse(section.dataset.gids);
+        const picked = gids.filter(gid => selectedCustomDecks.has(gid)).length;
+        section.querySelector('.cg-tally').textContent = picked ? `${picked}/${gids.length}` : '';
+        const toggle = section.querySelector('.cg-toggle');
+        toggle.textContent = picked === gids.length ? 'Clear' : 'Select all';
+        toggle.setAttribute('aria-label', `${toggle.textContent} ${section.querySelector('.cg-name').textContent} decks`);
+    });
+}
+
+function onCustomSelectionChanged() {
+    syncCustomSelectionUI();
+    saveCustomPrefs();
+    customAvailable = null; // stale until the server recounts
     updateCustomSummary();
+    refreshCustomAvailable();
+}
+
+function toggleCustomDeck(gid) {
+    if (!selectedCustomDecks.delete(gid)) selectedCustomDecks.add(gid);
+    onCustomSelectionChanged();
+}
+
+// Group header toggle: fills the group unless it's already full, then clears it.
+function toggleCustomGroup(gids) {
+    const allOn = gids.every(gid => selectedCustomDecks.has(gid));
+    gids.forEach(gid => allOn ? selectedCustomDecks.delete(gid) : selectedCustomDecks.add(gid));
+    onCustomSelectionChanged();
 }
 
 function selectAllCustomDecks(select) {
-    const vocabDecks = allDecksData.filter(d => d.category === 'vocab');
-    selectedCustomDecks = new Set(select ? vocabDecks.map(d => d.gid) : []);
-    renderCustomDeckList();
-    updateCustomSummary();
+    selectedCustomDecks = new Set(select ? vocabDecks().map(d => d.gid) : []);
+    onCustomSelectionChanged();
 }
 
-function updateCustomSummary() {
+function selectCompletedCustomDecks() {
+    const done = vocabDecks().filter(d => progressData[d.gid]?.thai && progressData[d.gid]?.eng);
+    if (!done.length) {
+        showToast('No decks completed in both modes yet', 'info');
+        return;
+    }
+    selectedCustomDecks = new Set(done.map(d => d.gid));
+    onCustomSelectionChanged();
+}
+
+// The per-deck counts overlap (the same word lives in several decks), so only
+// the server — which has the words — can say how many unique cards a selection
+// holds. Debounced, and stale replies are dropped via the sequence number.
+let customPreviewTimer = null;
+let customPreviewSeq = 0;
+function refreshCustomAvailable() {
+    clearTimeout(customPreviewTimer);
+    const seq = ++customPreviewSeq;
+    if (selectedCustomDecks.size === 0) return;
+    customPreviewTimer = setTimeout(async () => {
+        try {
+            const res = await fetch('/custom_deck', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ deck_ids: [...selectedCustomDecks], count: 'all', preview: true })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (seq !== customPreviewSeq) return;
+            customAvailable = data.total_available;
+            updateCustomSummary();
+        } catch (e) {
+            if (seq === customPreviewSeq) updateCustomSummary(true);
+        }
+    }, 200);
+}
+
+function updateCustomSummary(countFailed = false) {
+    const summary = document.getElementById('customSummary');
+    const startBtn = document.getElementById('startCustomBtn');
     const n = selectedCustomDecks.size;
-    const available = allDecksData
-        .filter(d => d.category === 'vocab' && selectedCustomDecks.has(d.gid))
-        .reduce((sum, d) => sum + d.count, 0);
-    document.getElementById('customSummary').innerText =
-        n === 0 ? 'No decks selected' : `${n} deck${n > 1 ? 's' : ''} · up to ${available} cards`;
-    document.getElementById('startCustomBtn').disabled = n === 0;
+    const decksText = `${n} deck${n === 1 ? '' : 's'}`;
+
+    startBtn.innerText = 'Start';
+    startBtn.disabled = n === 0;
+
+    if (n === 0) {
+        summary.innerText = 'No decks selected';
+    } else if (customAvailable === null) {
+        // Not counted yet — or the count request failed, in which case the
+        // best we can offer is the pre-dedupe total.
+        const rawTotal = vocabDecks()
+            .filter(d => selectedCustomDecks.has(d.gid))
+            .reduce((sum, d) => sum + d.count, 0);
+        summary.innerText = countFailed ? `${decksText} · up to ${rawTotal} cards` : `${decksText} · counting…`;
+    } else {
+        const short = customCount !== 'all' && customAvailable < customCount;
+        const willUse = customCount === 'all' ? customAvailable : Math.min(customCount, customAvailable);
+        summary.innerText = `${decksText} · ${customAvailable} unique card${customAvailable === 1 ? '' : 's'}`
+            + (short ? ` (fewer than ${customCount})` : '');
+        startBtn.innerText = `Start · ${willUse}`;
+        startBtn.disabled = customAvailable === 0;
+    }
 }
 
 function setupCustomCountButtons() {
-    document.querySelectorAll('#countGroup .count-btn').forEach(btn => {
+    const buttons = document.querySelectorAll('#countGroup .count-btn');
+    const sync = () => buttons.forEach(b => {
+        const on = b.dataset.count === String(customCount);
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', on);
+    });
+    buttons.forEach(btn => {
         btn.onclick = () => {
-            document.querySelectorAll('#countGroup .count-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            customCount = parseInt(btn.dataset.count, 10);
+            customCount = btn.dataset.count === 'all' ? 'all' : parseInt(btn.dataset.count, 10);
+            sync();
+            saveCustomPrefs();
+            updateCustomSummary();
         };
     });
+    sync();
 }
 
-async function startCustomDeck() {
+// keepMode: "New Sample" from the victory screen stays in the mode you were
+// drilling instead of snapping back to Thai-front.
+async function startCustomDeck(keepMode = false) {
     if (selectedCustomDecks.size === 0) return;
     showLoading('Building your custom deck…');
     try {
         const res = await fetch('/custom_deck', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ deck_ids: [...selectedCustomDecks], count: customCount })
+            body: JSON.stringify({
+                deck_ids: [...selectedCustomDecks],
+                count: customCount,
+                exclude: [...customSeenThai]
+            })
         });
         if (!res.ok) {
             const e = await res.json().catch(() => ({}));
@@ -280,16 +524,25 @@ async function startCustomDeck() {
         const data = await res.json();
         if (!data.words || data.words.length === 0) throw new Error('No cards found');
 
+        // Track what's been dealt so the next sample avoids it. Once the server
+        // had to reuse seen cards we've been round the whole pool: start over.
+        if (data.recycled) customSeenThai = new Set();
+        data.words.forEach(w => customSeenThai.add(w.thai));
+
         fullVocab = data.words;
         currentCategory = 'custom';
         currentDeckId = 'custom';
-        currentDeckName = `🎲 Custom · ${data.count}`;
+        currentDeckName = '🎲 Custom';
         document.getElementById('deckTitle').innerText = currentDeckName;
 
         hideLoading();
         document.getElementById('modeToggle').style.display = 'flex';
         showScreen('gameContainer');
-        switchMode('thai_front');
+        switchMode(keepMode ? currentMode : 'thai_front');
+
+        if (customCount !== 'all' && data.count < customCount) {
+            showToast(`Only ${data.count} unique cards in those decks — using all of them`, 'info');
+        }
     } catch (err) {
         hideLoading();
         showToast('Could not build custom deck: ' + err.message);
@@ -421,26 +674,8 @@ async function startSpeakingMode() {
         document.getElementById('deckTitle').innerText = 'Speaking';
 
         showScreen('gameContainer');
-        
-        // Start without shuffling (sentences are already randomized by AI)
-        deck = [...fullVocab];
-        document.getElementById('victoryArea').style.display = 'none';
-        document.getElementById('gameArea').style.display = 'block';
-        document.getElementById('actionArea').style.display = 'flex';
-        document.getElementById('actionArea').classList.remove('visible');
-        document.getElementById('topControls').style.visibility = 'visible';
-        
-        const moverEl = document.getElementById('cardMover');
-        moverEl.classList.remove('anim-slide-right', 'anim-slide-left', 'anim-pop-in');
-        
-        isFlipped = false;
-        isAnimating = false;
-        const cardEl = document.getElementById('flashcard');
-        cardEl.classList.remove('is-flipped');
-        cardEl.style.transition = 'none';
-        renderCard();
-        setTimeout(() => { cardEl.style.transition = 'transform 0.6s'; }, 50);
-        
+        restartRound();
+
     } catch (err) {
         hideLoading();
         showToast('Failed to generate sentences: ' + err.message);
@@ -452,33 +687,24 @@ async function loadDeckData(gid, deckName) {
     showLoading("Downloading Deck...");
     try {
         const response = await fetch(`/vocab/${gid}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const words = await response.json();
         if (!words || words.length === 0) throw new Error("Empty deck");
 
-        // Store deck info
+        // Store deck info. Take the category from the deck itself rather than
+        // trusting whatever screen we came from (a stale 'custom' here would
+        // skip progress tracking and mislabel the victory screen).
+        const meta = allDecksData.find(d => d.gid === gid);
+        if (meta) currentCategory = meta.category;
         currentDeckId = gid;
         currentDeckName = deckName || 'Deck';
         document.getElementById('deckTitle').innerText = currentDeckName;
-
-        // PRELOAD AUDIO USING 'audio_text' (which contains override if applicable)
-        const preloadCount = Math.min(words.length, 5);
-        for(let i=0; i<preloadCount; i++) {
-             fetch('/speak', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text: words[i].audio_text, speed: 0.9})
-            }).then(r => {
-                if (!r.ok) throw new Error(`TTS ${r.status}`);
-                return r.blob();
-            }).then(b => {
-                if (b.size) audioCache[words[i].audio_text] = URL.createObjectURL(b);
-            }).catch(() => {}); // preload is best-effort; playback retries on demand
-        }
 
         fullVocab = [...words];
         hideLoading();
         startGameUI();
     } catch (err) {
+        console.error('Deck load failed:', err);
         showToast('Failed to load deck data.');
         hideLoading();
     }
@@ -493,6 +719,7 @@ function startGameUI() {
 }
 
 function goHome() {
+    audioPlayer.pause(); // don't keep talking over the menu
     document.getElementById('gameContainer').style.display = 'none';
     
     // Reset mode toggle labels back to default
@@ -504,8 +731,8 @@ function goHome() {
         // Go back to main menu for letters and speaking
         showScreen('categoryMenu');
     } else if (currentCategory === 'custom') {
-        // Custom decks live under the vocab deck list
-        showDecks('vocab');
+        // Back to the builder (selection intact), not out to the deck list
+        showCustomBuilder();
     } else {
         // Go back to deck selection for vocab/script - refresh to show updated progress
         showDecks(currentCategory);
@@ -531,7 +758,9 @@ function shuffleInPlace(arr) {
 
 function restartRound() {
     deck = [...fullVocab];
-    shuffleInPlace(deck);
+    // Speaking sentences arrive in the order Gemini wrote them (already mixed);
+    // everything else is shuffled each round.
+    if (currentCategory !== 'speaking') shuffleInPlace(deck);
     undoHistory = []; // Clear undo history for new round
     document.getElementById('victoryArea').style.display = 'none';
     document.getElementById('gameArea').style.display = 'block';
@@ -549,6 +778,7 @@ function restartRound() {
     cardEl.classList.remove('is-flipped');
     cardEl.style.transition = 'none';
     renderCard();
+    preloadUpcomingAudio();
     setTimeout(() => { cardEl.style.transition = 'transform 0.6s'; }, 50);
 }
 
@@ -587,6 +817,7 @@ function handleResult(isCorrect) {
         cardEl.classList.remove('is-flipped');
         isFlipped = false;
         updateCardContent();
+        preloadUpcomingAudio();
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 cardEl.style.transition = 'transform 0.6s';
@@ -900,6 +1131,13 @@ function showVictory() {
     document.getElementById('actionArea').style.display = 'none';
     document.getElementById('topControls').style.visibility = 'hidden';
     document.getElementById('victoryArea').style.display = 'flex';
+
+    // Custom decks get "New Sample" (fresh random draw from the same decks),
+    // and their exits are relabelled to say where they actually go.
+    const isCustom = currentCategory === 'custom';
+    document.getElementById('victoryNewSampleBtn').style.display = isCustom ? '' : 'none';
+    document.getElementById('victoryBackBtn').innerText = isCustom ? 'Back to Builder' : 'Select Another Deck';
+    document.getElementById('victoryRestartBtn').innerText = isCustom ? 'Same Cards Again' : 'Start Over';
     
     // Mark this deck/mode as complete (skip for letters, speaking, and the
     // ephemeral custom decks, which have no persistent progress)
@@ -936,35 +1174,25 @@ function flipCard() {
 
 function playCurrentAudio() {
     if (deck.length === 0) return;
-    
+
     // USE THE CORRECT AUDIO TEXT (OVERRIDE or THAI or FULL NAME for letters)
     const textToSpeak = deck[0].audio_text;
 
-    if (audioCache[textToSpeak]) {
-        playAudioUrl(audioCache[textToSpeak]);
-        return;
-    }
-    fetch('/speak', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text: textToSpeak, speed: 0.9})
-    })
-    .then(res => {
-        if (!res.ok) throw new Error(`TTS failed (${res.status})`);
-        return res.blob();
-    })
-    .then(blob => {
-        if (!blob.size) throw new Error('TTS returned empty audio');
-        // Only successful audio is cached — a failure here used to be cached
-        // as silence and mute that word for the rest of the session.
-        const url = URL.createObjectURL(blob);
-        audioCache[textToSpeak] = url;
-        playAudioUrl(url);
-    })
-    .catch(e => console.error("Audio failed", e));
+    fetchAudio(textToSpeak).then(url => {
+        // Only play if this is still the card on screen. If the user moved on
+        // while Azure was synthesising, the old word used to play over the new
+        // card (and be mistaken for it).
+        const stillCurrent = deck.length && deck[0].audio_text === textToSpeak;
+        const gameVisible = document.getElementById('gameContainer').style.display === 'flex';
+        if (stillCurrent && gameVisible) playAudioUrl(url);
+    }).catch(e => console.error("Audio failed", e));
 }
 
+// hideLoading fades out then hides after 500ms; that timer must be cancelled
+// by a showLoading in between, or the new overlay vanishes half a second in.
+let loadingHideTimer = null;
 function showLoading(msg) {
+    clearTimeout(loadingHideTimer);
     const overlay = document.getElementById('loadingOverlay');
     document.getElementById('loadingText').innerText = msg;
     overlay.style.display = 'flex';
@@ -972,9 +1200,10 @@ function showLoading(msg) {
 }
 
 function hideLoading() {
+    clearTimeout(loadingHideTimer);
     const overlay = document.getElementById('loadingOverlay');
     overlay.style.opacity = '0';
-    setTimeout(() => { overlay.style.display = 'none'; }, 500);
+    loadingHideTimer = setTimeout(() => { overlay.style.display = 'none'; }, 500);
 }
 
 // Non-blocking error/info notice that replaces alert() popups.
@@ -1036,8 +1265,10 @@ async function generateNumbersChallenges() {
 }
 
 async function startNumbersGame() {
+    const session = ++numbersSession;
     document.getElementById('categoryMenu').style.display = 'none';
     await generateNumbersChallenges();
+    if (session !== numbersSession) return; // exited / restarted meanwhile
 
     currentNumberLevel = 0;
     numbersGameActive = true;
@@ -1143,7 +1374,9 @@ function checkNumberAnswer() {
         document.getElementById('numbersMessage').className = 'numbers-message success';
         
         // Move to next level after delay
+        const session = numbersSession;
         setTimeout(() => {
+            if (session !== numbersSession) return; // player left the game
             if (currentNumberLevel < 6) {
                 currentNumberLevel++;
                 renderNumbersLevel();
@@ -1174,9 +1407,14 @@ function checkNumberAnswer() {
         document.getElementById('numbersMessage').innerText = `Wrong! The answer was ${challenge.number.toLocaleString()}. Restarting...`;
         document.getElementById('numbersMessage').className = 'numbers-message error';
         
-        // Reset to level 1 with new numbers after delay (input stays locked)
+        // Reset to level 1 with new numbers after delay (input stays locked).
+        // Without the session check, leaving during this pause used to flash
+        // the loading overlay and play a number over the main menu.
+        const session = numbersSession;
         setTimeout(async () => {
+            if (session !== numbersSession) return;
             await generateNumbersChallenges();
+            if (session !== numbersSession) return;
             currentNumberLevel = 0;
             renderNumbersLevel();
             numbersInputLocked = false; // Unlock after reset
@@ -1196,7 +1434,10 @@ function restartNumbersGame() {
 }
 
 function exitNumbersGame() {
+    numbersSession++;
     numbersGameActive = false;
+    numbersInputLocked = false;
+    audioPlayer.pause();
     showScreen('categoryMenu');
 }
 
@@ -1244,12 +1485,27 @@ document.addEventListener('keydown', (e) => {
             return;
         }
         
+        if (e.code === 'Space' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+            // Stop the page scrolling — and stop Space from also "clicking"
+            // whichever button was last tapped with the mouse (see below).
+            e.preventDefault();
+        }
         if (!isFlipped && !isAnimating && e.code === 'Space') flipCard();
         if (isFlipped && !isAnimating) {
             if (e.code === 'ArrowLeft') handleResult(false);
             if (e.code === 'ArrowRight') handleResult(true);
         }
     }
+});
+
+// A mouse/touch click leaves the button focused, so the next Space press would
+// both flip the card (our handler above) and re-click that button (browser
+// default): click "Got It!" then press Space, and the next card was marked
+// correct without ever being seen; click the Thai/Eng toggle and Space
+// restarted the round. Keyboard-initiated clicks (e.detail === 0) keep focus.
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#gameContainer button, #numbersContainer button');
+    if (btn && e.detail > 0) btn.blur();
 });
 
 // Handle mobile input for numbers game (touch keyboards don't trigger keydown reliably)
@@ -1364,6 +1620,7 @@ window.addEventListener('resize', () => {
     resizeTimer = setTimeout(refitCurrentCard, 150);
 });
 
+loadCustomPrefs();
 setupCustomCountButtons();
 
 // Initialize the app

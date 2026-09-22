@@ -1,6 +1,7 @@
 import pytest
 
-from thai_utils import LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai
+from thai_utils import (LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai,
+                        pool_unique_words, sample_preferring_unseen)
 
 # Known-correct spellings, including the two irregular rules the numbers game
 # exists to drill:
@@ -108,3 +109,57 @@ class TestComputeDeckHash:
 
     def test_eng_is_optional(self):
         assert compute_deck_hash([{'thai': 'ก'}])
+
+
+def _deck(*pairs):
+    return {'words': [{'thai': t, 'eng': e} for t, e in pairs]}
+
+
+class TestPoolUniqueWords:
+    def test_same_thai_with_different_english_is_one_card(self):
+        # The real-world case: the same word re-entered with reworded English.
+        pool = pool_unique_words([
+            _deck(('ขี้เหนียว', 'stingy, cheap')),
+            _deck(('ขี้เหนียว', 'stingy'), ('เสร็จ', 'finish')),
+        ])
+        assert [w['thai'] for w in pool] == ['ขี้เหนียว', 'เสร็จ']
+
+    def test_first_occurrence_wins(self):
+        pool = pool_unique_words([_deck(('เสร็จ', 'finish')), _deck(('เสร็จ', 'done'))])
+        assert pool[0]['eng'] == 'finish'
+
+    def test_duplicates_within_one_deck(self):
+        assert len(pool_unique_words([_deck(('ก', 'a'), ('ก', 'b'))])) == 1
+
+    def test_accepts_a_generator_and_empty_input(self):
+        assert pool_unique_words(d for d in []) == []
+
+
+class TestSamplePreferringUnseen:
+    POOL = [{'thai': str(i), 'eng': str(i)} for i in range(10)]
+
+    def test_caps_at_pool_size(self):
+        cards, recycled = sample_preferring_unseen(self.POOL, 100)
+        assert len(cards) == 10 and not recycled
+
+    def test_none_means_whole_pool(self):
+        cards, _ = sample_preferring_unseen(self.POOL, None)
+        assert sorted(w['thai'] for w in cards) == sorted(w['thai'] for w in self.POOL)
+
+    def test_avoids_excluded_cards_while_others_remain(self):
+        seen = {'0', '1', '2', '3', '4', '5'}
+        for _ in range(20):  # random, so repeat
+            cards, recycled = sample_preferring_unseen(self.POOL, 4, seen)
+            assert not recycled
+            assert not seen & {w['thai'] for w in cards}
+
+    def test_recycles_only_what_it_must(self):
+        seen = {str(i) for i in range(8)}  # only '8' and '9' are fresh
+        cards, recycled = sample_preferring_unseen(self.POOL, 5, seen)
+        got = {w['thai'] for w in cards}
+        assert recycled and len(cards) == 5 and {'8', '9'} <= got
+
+    def test_does_not_mutate_the_pool(self):
+        before = list(self.POOL)
+        sample_preferring_unseen(self.POOL, 3)
+        assert self.POOL == before
