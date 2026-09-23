@@ -281,3 +281,16 @@ def test_generate_sentences_reports_upstream_status(harness, monkeypatch):
     assert res.status_code == 502
     assert 'HTTP 404' in res.get_json()['error']
     assert 'model retired' not in res.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------- shell ----
+
+def test_index_versions_static_assets_and_never_caches_itself(harness):
+    res = harness.client.get('/')
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    v = harness.module.STATIC_VERSION
+    assert len(v) == 10
+    assert f'/static/js/app.js?v={v}' in html
+    assert f'/static/css/style.css?v={v}' in html
+    assert res.headers['Cache-Control'] == 'no-cache'

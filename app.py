@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, Response, jsonify
+from flask import Flask, render_template, request, Response, jsonify, make_response
 import csv
+import hashlib
 import requests
 import io
 import urllib.parse
@@ -302,9 +303,28 @@ if not MEMORY_DECKS:
 # ==========================================
 # ROUTES
 # ==========================================
+# Static assets are referenced as /static/…?v=<hash of their contents>, so a
+# deploy that changes app.js also changes its URL. Without this a browser could
+# pair the new index.html with a cached, older app.js (or vice versa) and the
+# page would half-work until the cache expired.
+def _static_version():
+    h = hashlib.md5()
+    for rel in ('js/app.js', 'css/style.css'):
+        try:
+            with open(os.path.join(BASE_DIR, 'static', rel), 'rb') as f:
+                h.update(f.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+STATIC_VERSION = _static_version()
+
+
 @app.route('/')
 def home():
-    return render_template('index.html')
+    resp = make_response(render_template('index.html', v=STATIC_VERSION))
+    resp.headers['Cache-Control'] = 'no-cache'  # always revalidate the shell
+    return resp
 
 @app.route('/decks')
 def get_decks():

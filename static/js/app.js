@@ -48,6 +48,26 @@ function playAudioUrl(url) {
     audioPlayer.play().catch(e => console.warn('Audio playback skipped:', e.message));
 }
 
+// fetch() for our own API: one automatic retry when the response never came
+// from Flask (502/503/504 — e.g. Render's proxy while a spun-down instance
+// wakes up — or a dropped connection). Rejects with the HTTP status in the
+// message, so a failure toast says *what* failed rather than just that it did.
+async function apiFetch(url, opts = {}, { retries = 1 } = {}) {
+    for (let attempt = 0; ; attempt++) {
+        let res;
+        try {
+            res = await fetch(url, opts);
+        } catch (err) {
+            if (attempt < retries) { await sleep(1500); continue; }
+            throw new Error('network error');
+        }
+        if (res.ok) return res;
+        if ([502, 503, 504].includes(res.status) && attempt < retries) { await sleep(1500); continue; }
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `server error (HTTP ${res.status})`);
+    }
+}
+
 let allDecksData = [];
 let progressData = {}; // Track completion status
 let fullVocab = []; 
@@ -152,8 +172,8 @@ async function initApp() {
     try {
         // Fetch decks and progress in parallel
         const [decksResponse, progressResponse] = await Promise.all([
-            fetch('/decks'),
-            fetch('/progress')
+            apiFetch('/decks'),
+            apiFetch('/progress')
         ]);
         allDecksData = await decksResponse.json();
         progressData = await progressResponse.json();
@@ -172,8 +192,8 @@ async function showDecks(category) {
     // Refresh deck and progress data from server
     try {
         const [decksResponse, progressResponse] = await Promise.all([
-            fetch('/decks'),
-            fetch('/progress')
+            apiFetch('/decks'),
+            apiFetch('/progress')
         ]);
         allDecksData = await decksResponse.json();
         progressData = await progressResponse.json();
@@ -440,12 +460,11 @@ function refreshCustomAvailable() {
     if (selectedCustomDecks.size === 0) return;
     customPreviewTimer = setTimeout(async () => {
         try {
-            const res = await fetch('/custom_deck', {
+            const res = await apiFetch('/custom_deck', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ deck_ids: [...selectedCustomDecks], count: 'all', preview: true })
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (seq !== customPreviewSeq) return;
             customAvailable = data.total_available;
@@ -508,7 +527,7 @@ async function startCustomDeck(keepMode = false) {
     if (selectedCustomDecks.size === 0) return;
     showLoading('Building your custom deck…');
     try {
-        const res = await fetch('/custom_deck', {
+        const res = await apiFetch('/custom_deck', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -517,10 +536,6 @@ async function startCustomDeck(keepMode = false) {
                 exclude: [...customSeenThai]
             })
         });
-        if (!res.ok) {
-            const e = await res.json().catch(() => ({}));
-            throw new Error(e.error || 'Failed to build deck');
-        }
         const data = await res.json();
         if (!data.words || data.words.length === 0) throw new Error('No cards found');
 
@@ -558,8 +573,7 @@ async function downloadDeckMp3(deckId, deckName) {
 
     try {
         // 1. Kick off the background job
-        const startRes = await fetch(`/download_deck/${deckId}/start`, { method: 'POST' });
-        if (!startRes.ok) throw new Error('Could not start MP3 generation');
+        const startRes = await apiFetch(`/download_deck/${deckId}/start`, { method: 'POST' }, { retries: 0 });
         const { job_id } = await startRes.json();
 
         // 2. Poll for progress until done (or error)
@@ -644,16 +658,12 @@ async function startSpeakingMode() {
     showLoading('Generating sentences with AI... This may take a moment.');
     
     try {
-        const response = await fetch('/generate_sentences', {
+        // Gemini takes a while; don't retry and double the spend.
+        const response = await apiFetch('/generate_sentences', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'}
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to generate sentences');
-        }
-        
+        }, { retries: 0 });
+
         const sentences = await response.json();
         
         if (!sentences || sentences.length === 0) {
@@ -686,8 +696,7 @@ async function startSpeakingMode() {
 async function loadDeckData(gid, deckName) {
     showLoading("Downloading Deck...");
     try {
-        const response = await fetch(`/vocab/${gid}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const response = await apiFetch(`/vocab/${gid}`);
         const words = await response.json();
         if (!words || words.length === 0) throw new Error("Empty deck");
 
@@ -705,7 +714,7 @@ async function loadDeckData(gid, deckName) {
         startGameUI();
     } catch (err) {
         console.error('Deck load failed:', err);
-        showToast('Failed to load deck data.');
+        showToast('Failed to load deck: ' + err.message);
         hideLoading();
     }
 }
