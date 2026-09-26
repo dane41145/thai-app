@@ -70,6 +70,21 @@ async function apiFetch(url, opts = {}, { retries = 1 } = {}) {
 
 let allDecksData = [];
 let progressData = {}; // Track completion status
+
+// Deck list order: most recently opened first, never-opened decks after in
+// config.json order. Kept per device in localStorage (survives deploys, which
+// progress.json on the server does not).
+const LAST_OPENED_KEY = 'thaiDeckLastOpened';
+function loadLastOpened() {
+    try { return JSON.parse(localStorage.getItem(LAST_OPENED_KEY)) || {}; } catch (e) { return {}; }
+}
+function markDeckOpened(gid) {
+    try {
+        const map = loadLastOpened();
+        map[gid] = Date.now();
+        localStorage.setItem(LAST_OPENED_KEY, JSON.stringify(map));
+    } catch (e) { /* best-effort */ }
+}
 let fullVocab = []; 
 let deck = [];      
 let currentMode = 'thai_front';
@@ -201,7 +216,10 @@ async function showDecks(category) {
         console.error('Failed to refresh data:', err);
     }
     
-    const filtered = allDecksData.filter(d => d.category === category);
+    const lastOpened = loadLastOpened();
+    const filtered = allDecksData
+        .filter(d => d.category === category)
+        .sort((a, b) => (lastOpened[b.gid] || 0) - (lastOpened[a.gid] || 0)); // stable: ties keep config order
     const listArea = document.getElementById('deckListArea');
     listArea.innerHTML = '';
 
@@ -705,6 +723,7 @@ async function loadDeckData(gid, deckName) {
         // skip progress tracking and mislabel the victory screen).
         const meta = allDecksData.find(d => d.gid === gid);
         if (meta) currentCategory = meta.category;
+        markDeckOpened(gid);
         currentDeckId = gid;
         currentDeckName = deckName || 'Deck';
         document.getElementById('deckTitle').innerText = currentDeckName;
