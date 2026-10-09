@@ -1,30 +1,3 @@
-const audioCache = {};    // audio_text -> object URL of synthesised MP3
-const audioPending = {};  // audio_text -> in-flight fetch, so preload + play don't double-request
-
-// Fetch TTS for `text` (once), resolving to a playable object URL.
-function fetchAudio(text) {
-    if (audioCache[text]) return Promise.resolve(audioCache[text]);
-    if (audioPending[text]) return audioPending[text];
-    const p = fetch('/speak', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({text, speed: 0.9})
-    })
-    .then(res => {
-        if (!res.ok) throw new Error(`TTS failed (${res.status})`);
-        return res.blob();
-    })
-    .then(blob => {
-        if (!blob.size) throw new Error('TTS returned empty audio');
-        // Only successful audio is cached — a failure here used to be cached
-        // as silence and mute that word for the rest of the session.
-        audioCache[text] = URL.createObjectURL(blob);
-        return audioCache[text];
-    })
-    .finally(() => { delete audioPending[text]; });
-    audioPending[text] = p;
-    return p;
-}
 
 // Warm the cache for the next few cards of the *shuffled* deck, so flipping
 // or advancing doesn't wait on Azure. (The old preload fetched the first five
@@ -34,18 +7,6 @@ function preloadUpcomingAudio() {
     deck.slice(1, 1 + PRELOAD_AHEAD).forEach(card => {
         if (card.audio_text) fetchAudio(card.audio_text).catch(() => {});
     });
-}
-
-// One shared player: rapid taps restart the clip instead of layering copies,
-// and the .catch absorbs mobile autoplay blocks (no user gesture yet) instead
-// of leaving unhandled promise rejections.
-const audioPlayer = new Audio();
-function playAudioUrl(url) {
-    if (!url) return;
-    audioPlayer.pause();
-    audioPlayer.src = url;
-    audioPlayer.currentTime = 0;
-    audioPlayer.play().catch(e => console.warn('Audio playback skipped:', e.message));
 }
 
 // fetch() for our own API: one automatic retry when the response never came
@@ -113,54 +74,6 @@ let numbersInputLocked = false; // Prevents input during transitions
 let currentNumberLevel = 0; // 0-6 for levels 1-7
 let numbersChallenges = []; // Array of {number: 123, audioUrl: '...'}
 let currentInput = '';
-
-// ========== THAI LETTERS DATA (HARDCODED) ==========
-const THAI_LETTERS = [
-    { letter: "ก", fullName: "ก ไก่", letterClass: "MC", meaning: "chicken" },
-    { letter: "ข", fullName: "ข ไข่", letterClass: "HC", meaning: "egg" },
-    { letter: "ฃ", fullName: "ฃ ขวด", letterClass: "HC", meaning: "bottle (obsolete)" },
-    { letter: "ค", fullName: "ค ควาย", letterClass: "LC", meaning: "buffalo" },
-    { letter: "ฅ", fullName: "ฅ คน", letterClass: "LC", meaning: "person (obsolete)" },
-    { letter: "ฆ", fullName: "ฆ ระฆัง", letterClass: "LC", meaning: "bell" },
-    { letter: "ง", fullName: "ง งู", letterClass: "LC", meaning: "snake" },
-    { letter: "จ", fullName: "จ จาน", letterClass: "MC", meaning: "plate" },
-    { letter: "ฉ", fullName: "ฉ ฉิ่ง", letterClass: "HC", meaning: "cymbals" },
-    { letter: "ช", fullName: "ช ช้าง", letterClass: "LC", meaning: "elephant" },
-    { letter: "ซ", fullName: "ซ โซ่", letterClass: "LC", meaning: "chain" },
-    { letter: "ฌ", fullName: "ฌ เฌอ", letterClass: "LC", meaning: "tree" },
-    { letter: "ญ", fullName: "ญ หญิง", letterClass: "LC", meaning: "woman" },
-    { letter: "ฎ", fullName: "ฎ ชฎา", letterClass: "MC", meaning: "Thai headdress" },
-    { letter: "ฏ", fullName: "ฏ ปฏัก", letterClass: "MC", meaning: "spear" },
-    { letter: "ฐ", fullName: "ฐ ฐาน", letterClass: "HC", meaning: "base / pedestal" },
-    { letter: "ฑ", fullName: "ฑ มณโฑ", letterClass: "LC", meaning: "Montho (character)" },
-    { letter: "ฒ", fullName: "ฒ ผู้เฒ่า", letterClass: "LC", meaning: "old man" },
-    { letter: "ณ", fullName: "ณ เณร", letterClass: "LC", meaning: "novice monk" },
-    { letter: "ด", fullName: "ด เด็ก", letterClass: "MC", meaning: "child" },
-    { letter: "ต", fullName: "ต เต่า", letterClass: "MC", meaning: "turtle" },
-    { letter: "ถ", fullName: "ถ ถุง", letterClass: "HC", meaning: "bag / sack" },
-    { letter: "ท", fullName: "ท ทหาร", letterClass: "LC", meaning: "soldier" },
-    { letter: "ธ", fullName: "ธ ธง", letterClass: "LC", meaning: "flag" },
-    { letter: "น", fullName: "น หนู", letterClass: "LC", meaning: "mouse / rat" },
-    { letter: "บ", fullName: "บ ใบไม้", letterClass: "MC", meaning: "leaf" },
-    { letter: "ป", fullName: "ป ปลา", letterClass: "MC", meaning: "fish" },
-    { letter: "ผ", fullName: "ผ ผึ้ง", letterClass: "HC", meaning: "bee" },
-    { letter: "ฝ", fullName: "ฝ ฝา", letterClass: "HC", meaning: "lid / cover" },
-    { letter: "พ", fullName: "พ พาน", letterClass: "LC", meaning: "tray" },
-    { letter: "ฟ", fullName: "ฟ ฟัน", letterClass: "LC", meaning: "teeth" },
-    { letter: "ภ", fullName: "ภ สำเภา", letterClass: "LC", meaning: "junk (sailing ship)" },
-    { letter: "ม", fullName: "ม ม้า", letterClass: "LC", meaning: "horse" },
-    { letter: "ย", fullName: "ย ยักษ์", letterClass: "LC", meaning: "giant / ogre" },
-    { letter: "ร", fullName: "ร เรือ", letterClass: "LC", meaning: "boat" },
-    { letter: "ล", fullName: "ล ลิง", letterClass: "LC", meaning: "monkey" },
-    { letter: "ว", fullName: "ว แหวน", letterClass: "LC", meaning: "ring" },
-    { letter: "ศ", fullName: "ศ ศาลา", letterClass: "HC", meaning: "pavilion" },
-    { letter: "ษ", fullName: "ษ ฤๅษี", letterClass: "HC", meaning: "hermit" },
-    { letter: "ส", fullName: "ส เสือ", letterClass: "HC", meaning: "tiger" },
-    { letter: "ห", fullName: "ห หีบ", letterClass: "HC", meaning: "chest / box" },
-    { letter: "ฬ", fullName: "ฬ จุฬา", letterClass: "LC", meaning: "kite" },
-    { letter: "อ", fullName: "อ อ่าง", letterClass: "MC", meaning: "basin / tub" },
-    { letter: "ฮ", fullName: "ฮ นกฮูก", letterClass: "LC", meaning: "owl" }
-];
 
 // Deck names come from spreadsheet tab titles; escape them before they go
 // into innerHTML so a stray & or < can't break (or inject into) the markup.
@@ -654,7 +567,7 @@ function startLettersMode() {
         fullName: l.fullName,
         letterClass: l.letterClass,
         meaning: l.meaning,
-        audio_text: l.fullName  // Use full name for audio (e.g., "ก ไก่")
+        audio_text: l.say  // spelled as spoken (กอ ไก่); see thai-letters.js
     }));
     
     // Show mode toggle with Letters-specific labels

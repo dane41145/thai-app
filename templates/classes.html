@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Class Pals</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Mali:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/classes.css?v={{ v }}">
+</head>
+<body>
+
+    <!-- MAP -->
+    <section id="startScreen" class="screen active">
+        <a class="corner-btn" href="/" aria-label="Back to flashcards">🏠</a>
+        <h1 class="logo">Class <span>Pals</span></h1>
+        <p class="tagline">Every Thai consonant lives with one of three pals.<br>Learn who lives where!</p>
+        <div class="pals-row" id="startPals"></div>
+        <button class="sticker-bar" onclick="showHouses()" aria-label="Open the sticker houses">
+            <span>🏡 Sticker houses</span>
+            <span class="sticker-meter"><span id="stickerFill"></span></span>
+            <b id="stickerCount">0/44</b>
+        </button>
+        <div class="level-path" id="levelPath"></div>
+    </section>
+
+    <!-- LEVEL INTRO -->
+    <section id="introScreen" class="screen">
+        <div class="topbar">
+            <button class="corner-btn static" onclick="showMap()" aria-label="Back to map">⬅</button>
+            <h2 id="introTitle"></h2>
+            <span></span>
+        </div>
+        <div class="lesson" id="introBody"></div>
+        <button class="big-btn go" onclick="startLevel()">Let's go! ▶</button>
+    </section>
+
+    <!-- GAME -->
+    <section id="gameScreen" class="screen">
+        <div class="hud">
+            <button class="corner-btn static" onclick="showMap()" aria-label="Quit to map">✖</button>
+            <div class="hearts" id="hearts" aria-label="Lives"></div>
+            <div class="combo" id="combo"></div>
+            <div class="score" id="score">⭐ 0</div>
+        </div>
+        <div class="progress" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+
+        <div class="letter-card" id="letterCard">
+            <span class="letter-emoji" id="letterEmoji"></span>
+            <div class="letter-big" id="letterBig"></div>
+            <button class="say-btn" onclick="sayLetter()" aria-label="Hear the letter again">🔊</button>
+            <div class="letter-reveal" id="letterReveal"></div>
+        </div>
+
+        <div class="sky" id="rushSky">
+            <div class="faller" id="faller"><span id="fallerLetter"></span><small id="fallerEmoji"></small></div>
+        </div>
+
+        <div class="bubble" id="bubble" aria-live="polite"></div>
+
+        <div class="pals-row choices" id="choices"></div>
+        <button class="big-btn go next-btn" id="nextBtn" onclick="nextLetter()">Next ▶</button>
+    </section>
+
+    <!-- RESULTS -->
+    <section id="endScreen" class="screen">
+        <div class="end-card">
+            <div class="end-stars" id="endStars"></div>
+            <h2 id="endTitle"></h2>
+            <p class="end-score" id="endScore"></p>
+            <p class="best" id="endBest"></p>
+            <div id="endStickers" class="end-block"></div>
+            <div id="endMissed" class="end-block"></div>
+            <div class="menu-btns">
+                <button class="big-btn go" id="endNextBtn" onclick="openLevel(nextLevelIndex())">Next level ▶</button>
+                <button class="big-btn" onclick="replayLevel()">↻ Play again</button>
+                <button class="big-btn" onclick="showMap()">🗺️ Map</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- HOUSES / STICKER BOOK -->
+    <section id="housesScreen" class="screen">
+        <div class="topbar">
+            <button class="corner-btn static" onclick="showMap()" aria-label="Back to map">⬅</button>
+            <h2>Sticker houses</h2>
+            <span></span>
+        </div>
+        <p class="meet-hint">Get a letter right 3 times in a row to win its sticker.<br>Tap any letter to hear it 🔊</p>
+        <div id="houseList" class="meet-list"></div>
+    </section>
+
+    <div id="toast" class="toast" role="status"></div>
+    <div id="stickerPop" class="sticker-pop" aria-live="polite"></div>
+    <div id="confetti" aria-hidden="true"></div>
+
+    <script src="/static/js/thai-letters.js?v={{ v }}"></script>
+    <script src="/static/js/audio.js?v={{ v }}"></script>
+    <script src="/static/js/classes.js?v={{ v }}"></script>
+</body>
+</html>

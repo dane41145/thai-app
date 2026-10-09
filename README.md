@@ -9,6 +9,10 @@ AI-generated speaking practice.
 - **Vocab / Script** — flashcards loaded from your Google Sheets tabs, with
   audio, two directions (Thai-front / English-front), and per-deck progress.
 - **Letters** — the 44 Thai consonants with class (high/mid/low) drills.
+- **Class Pals** (`/classes`) — a cartoon game for learning which class each
+  consonant belongs to: lesson-then-play levels (the two mnemonic sentences,
+  high/low sound twins, rare copycats, a mixed boss level, a falling-letter
+  rush), with stars and per-letter stickers saved in the browser.
 - **Numbers** — hear a Thai number, type what you heard; 7 escalating levels.
 - **Speaking** — Gemini generates Thai sentences using only words you've studied.
 - **MP3 export** — any vocab deck can be downloaded as a listen-and-repeat MP3
@@ -85,7 +89,9 @@ pytest
 `tests/test_thai_utils.py` covers the pure logic in `thai_utils.py`: Thai
 number spelling (including the เอ็ด and ยี่สิบ irregulars), the audio LRU
 cache, TTS text cleanup, deck hashing, and custom-deck pooling/sampling.
-`tests/test_routes.py` exercises the Flask routes with canned sheet data
+`tests/test_letters.py` checks the shared consonant table, including that
+each letter's spoken name (`say`, e.g. กอ ไก่) uses a same-class consonant so
+TTS gives it the right tone. `tests/test_routes.py` exercises the Flask routes with canned sheet data
 (`requests.get` is stubbed, `CONFIG_FILE`/`PROGRESS_FILE` point at a temp
 dir). Neither needs network access or API keys.
 

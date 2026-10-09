@@ -291,6 +291,16 @@ def test_index_versions_static_assets_and_never_caches_itself(harness):
     html = res.get_data(as_text=True)
     v = harness.module.STATIC_VERSION
     assert len(v) == 10
-    assert f'/static/js/app.js?v={v}' in html
-    assert f'/static/css/style.css?v={v}' in html
+    for asset in ('js/thai-letters.js', 'js/audio.js', 'js/app.js', 'css/style.css'):
+        assert f'/static/{asset}?v={v}' in html
+    assert res.headers['Cache-Control'] == 'no-cache'
+
+
+def test_classes_game_page_uses_shared_letter_and_audio_scripts(harness):
+    res = harness.client.get('/classes')
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    v = harness.module.STATIC_VERSION
+    for asset in ('js/thai-letters.js', 'js/audio.js', 'js/classes.js', 'css/classes.css'):
+        assert f'/static/{asset}?v={v}' in html
     assert res.headers['Cache-Control'] == 'no-cache'

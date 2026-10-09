@@ -309,7 +309,8 @@ if not MEMORY_DECKS:
 # page would half-work until the cache expired.
 def _static_version():
     h = hashlib.md5()
-    for rel in ('js/app.js', 'css/style.css'):
+    for rel in ('js/thai-letters.js', 'js/audio.js', 'js/app.js', 'css/style.css',
+                'js/classes.js', 'css/classes.css'):
         try:
             with open(os.path.join(BASE_DIR, 'static', rel), 'rb') as f:
                 h.update(f.read())
@@ -324,6 +325,14 @@ STATIC_VERSION = _static_version()
 def home():
     resp = make_response(render_template('index.html', v=STATIC_VERSION))
     resp.headers['Cache-Control'] = 'no-cache'  # always revalidate the shell
+    return resp
+
+@app.route('/classes')
+def classes_game():
+    # Cartoon consonant-class game; its letter data and audio come from the
+    # same static files as the flashcards page, its TTS from /speak.
+    resp = make_response(render_template('classes.html', v=STATIC_VERSION))
+    resp.headers['Cache-Control'] = 'no-cache'
     return resp
 
 @app.route('/decks')
