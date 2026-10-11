@@ -508,11 +508,12 @@ async function downloadDeckMp3(deckId, deckName) {
         const { job_id } = await startRes.json();
 
         // 2. Poll for progress until done (or error)
+        let status;
         while (true) {
             await sleep(1000);
             const statusRes = await fetch(`/download_status/${job_id}`);
             if (!statusRes.ok) throw new Error('Lost track of the MP3 job');
-            const status = await statusRes.json();
+            status = await statusRes.json();
 
             if (status.state === 'error') throw new Error(status.error || 'MP3 generation failed');
             if (status.state === 'done') break;
@@ -523,7 +524,9 @@ async function downloadDeckMp3(deckId, deckName) {
         }
 
         // 3. Fetch the finished file and trigger the browser download
-        const blob = await fetch(`/download_result/${job_id}`).then(r => r.blob());
+        const resultRes = await fetch(`/download_result/${job_id}`);
+        if (!resultRes.ok) throw new Error(`couldn't fetch the finished file (HTTP ${resultRes.status})`);
+        const blob = await resultRes.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -531,7 +534,8 @@ async function downloadDeckMp3(deckId, deckName) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);  // Safari needs the URL alive after click()
+        if (status.skipped) showToast(`MP3 saved, but ${status.skipped} word(s) failed to synthesize and were left out`);
     } catch (err) {
         console.error('Download failed:', err);
         showToast('Failed to download MP3: ' + err.message);

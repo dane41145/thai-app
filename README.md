@@ -15,8 +15,10 @@ AI-generated speaking practice.
   rush), with stars and per-letter stickers saved in the browser.
 - **Numbers** — hear a Thai number, type what you heard; 7 escalating levels.
 - **Speaking** — Gemini generates Thai sentences using only words you've studied.
-- **MP3 export** — any vocab deck can be downloaded as a listen-and-repeat MP3
-  (Thai → pause → English → pause → Thai), generated in the background.
+- **MP3 export** — any vocab deck can be downloaded as a two-pass study track,
+  generated in the background. Part 1 (listen & repeat): Thai → English → slow
+  Thai → pause to say it aloud. Part 2 (recall, reshuffled): English → pause to
+  produce the Thai → Thai → pause to repeat. Pauses scale with phrase length.
 
 ## Quick start
 
@@ -100,7 +102,7 @@ dir). Neither needs network access or API keys.
 - `Procfile` runs gunicorn with **one worker process** + 8 threads. Keep it at
   one worker: the audio cache, rate limits, and MP3 job registry live in
   process memory.
-- `nixpacks.toml` installs `ffmpeg`, required for MP3 export.
+- MP3 export needs no ffmpeg: clips are joined as raw MP3 frames in Python.
 - **Progress is lost on every deploy unless you give it a disk.** The app
   directory is rebuilt from git on each deploy, and `progress.json` isn't in
   git. To keep progress: add a Render *Disk* to the service (e.g. mounted at

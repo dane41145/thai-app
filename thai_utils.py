@@ -154,3 +154,82 @@ def clean_english_for_tts(text):
     # Clean up any double spaces
     text = re.sub(r'\s+', ' ', text).strip()
     return text
+
+
+# ==========================================
+# MP3 STUDY TRACK
+# ==========================================
+# Deck exports use Azure's MPEG-2 Layer III, 24 kHz, 48 kbps mono CBR stream:
+# every frame is exactly 144 bytes holding 24 ms of audio. That lets us join
+# clips byte-for-byte, write silence, and measure durations without ffmpeg.
+MP3_EXPORT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
+MP3_FRAME_BYTES = 144
+MP3_FRAME_MS = 24
+_SILENT_FRAME = bytes.fromhex('fff364c4') + bytes(MP3_FRAME_BYTES - 4)
+
+# Pause lengths (ms). Clips are requested with tight padding, so these are
+# close to what the listener actually hears.
+GAP_BETWEEN_PARTS = 1200      # Thai → English → slow Thai, within one word
+GAP_AFTER_INTRO = 1500
+GAP_BETWEEN_PASSES = 2500
+
+
+def silent_mp3(ms):
+    """Silent MP3 of roughly `ms` milliseconds (rounded to whole 24 ms frames)."""
+    return _SILENT_FRAME * max(1, round(ms / MP3_FRAME_MS))
+
+
+def mp3_duration_ms(data):
+    """Duration of a CBR export-format MP3, from its byte length."""
+    return len(data) // MP3_FRAME_BYTES * MP3_FRAME_MS
+
+
+def shadow_gap_ms(thai_ms):
+    """Time to repeat the Thai aloud: its own length plus a breath."""
+    return max(2500, min(7000, thai_ms + 1500))
+
+
+def recall_gap_ms(thai_ms):
+    """Time to retrieve and say the Thai from the English cue. Longer phrases
+    get longer to think, within limits that keep the track moving."""
+    return max(3500, min(8000, thai_ms + 2500))
+
+
+def assemble_study_mp3(clips, intros, rng):
+    """Build a two-pass study track from per-word clips.
+
+    clips:  list of {'thai', 'thai_slow', 'eng'} export-format MP3 bytes.
+    intros: {'listen': bytes|None, 'recall': bytes|None} spoken part intros.
+    rng:    random.Random used for both shuffles.
+
+    Pass 1, listen & repeat:  Thai · English · slow Thai · (repeat aloud)
+    Pass 2, recall:           English · (say it in Thai) · Thai · (repeat aloud)
+    Pass 2 is reshuffled so recall doesn't follow the pass 1 order.
+    """
+    order1 = list(range(len(clips)))
+    rng.shuffle(order1)
+    order2 = order1[:]
+    rng.shuffle(order2)
+    if len(order2) > 1 and order2[0] == order1[-1]:
+        order2[0], order2[-1] = order2[-1], order2[0]   # no back-to-back repeat at the seam
+
+    out = []
+    if intros.get('listen'):
+        out += [intros['listen'], silent_mp3(GAP_AFTER_INTRO)]
+    for i in order1:
+        c = clips[i]
+        thai_ms = mp3_duration_ms(c['thai'])
+        out += [c['thai'], silent_mp3(GAP_BETWEEN_PARTS),
+                c['eng'], silent_mp3(GAP_BETWEEN_PARTS),
+                c['thai_slow'], silent_mp3(shadow_gap_ms(thai_ms))]
+
+    out.append(silent_mp3(GAP_BETWEEN_PASSES))
+    if intros.get('recall'):
+        out += [intros['recall'], silent_mp3(GAP_AFTER_INTRO)]
+    for i in order2:
+        c = clips[i]
+        thai_ms = mp3_duration_ms(c['thai'])
+        out += [c['eng'], silent_mp3(recall_gap_ms(thai_ms)),
+                c['thai'], silent_mp3(shadow_gap_ms(thai_ms))]
+
+    return b''.join(out)

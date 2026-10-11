@@ -6,7 +6,6 @@ import io
 import urllib.parse
 import json
 import os
-import subprocess
 import tempfile
 import re
 import random
@@ -14,7 +13,7 @@ import sys
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.sax.saxutils import escape
 
 from dotenv import load_dotenv
@@ -22,8 +21,9 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from thai_utils import (LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai,
-                        pool_unique_words, sample_preferring_unseen)
+from thai_utils import (MP3_EXPORT_FORMAT, LRUCache, assemble_study_mp3, clean_english_for_tts,
+                        compute_deck_hash, number_to_thai, pool_unique_words,
+                        sample_preferring_unseen)
 
 load_dotenv()  # pull AZURE_KEY / AZURE_REGION / GEMINI_KEY from a local .env, if present
 
@@ -132,10 +132,16 @@ def _get_azure_token():
             return None
 
 
-def azure_tts_rest(text, voice, speed=1.0):
+AZURE_APP_FORMAT = 'audio-16khz-32kbitrate-mono-mp3'
+
+
+def azure_tts_rest(text, voice, speed=1.0, output_format=AZURE_APP_FORMAT, tight=False):
     """
     Call Azure TTS using REST API instead of SDK.
     This works on any platform without native library dependencies.
+
+    tight=True asks Azure to trim the ~0.25s lead-in / ~1s tail of silence it
+    normally pads each clip with, so the MP3 export controls pause lengths.
     """
     access_token = _get_azure_token()
     if not access_token:
@@ -150,8 +156,10 @@ def azure_tts_rest(text, voice, speed=1.0):
 
     # escape() keeps &, <, > in card text from breaking the XML — and blocks
     # SSML tag injection via user-supplied text.
-    ssml = f'''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="th-TH">
-        <voice name="{voice}">
+    padding = ('<mstts:silence type="Leading-exact" value="50ms"/>'
+               '<mstts:silence type="Tailing-exact" value="100ms"/>') if tight else ''
+    ssml = f'''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="th-TH">
+        <voice name="{voice}">{padding}
             <prosody rate="{speed}">{escape(str(text))}</prosody>
         </voice>
     </speak>'''
@@ -159,7 +167,7 @@ def azure_tts_rest(text, voice, speed=1.0):
     headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/ssml+xml',
-        'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
+        'X-Microsoft-OutputFormat': output_format,
         'User-Agent': 'ThaiLearningApp'
     }
 
@@ -670,67 +678,44 @@ def reset_deck(deck_id):
 # ==========================================
 # MP3 DOWNLOAD
 # ==========================================
-def generate_audio_bytes(text, voice, speed=0.9):
-    """Generate audio for text and return as bytes using REST API."""
-    return azure_tts_rest(text, voice, speed)
+THAI_VOICE = "th-TH-PremwadeeNeural"
+ENGLISH_VOICE = "en-US-JennyNeural"
+EXPORT_WORKERS = 4         # parallel words per job; modest so Azure doesn't throttle us
+EXPORT_TTS_ATTEMPTS = 3
 
-def generate_silence_mp3(duration_ms, sample_rate=16000):
-    """Generate silent MP3 using ffmpeg."""
-    duration_sec = duration_ms / 1000.0
-    try:
-        result = subprocess.run([
-            'ffmpeg', '-f', 'lavfi', '-i', f'anullsrc=r={sample_rate}:cl=mono',
-            '-t', str(duration_sec), '-q:a', '9', '-f', 'mp3', '-'
-        ], capture_output=True, check=True)
-        return result.stdout
-    except Exception as e:
-        print(f"Silence generation error: {e}")
-        return b''
+STUDY_INTROS = {
+    'listen': "Part one: listen and repeat. You'll hear each Thai word, its meaning, "
+              "then the Thai again slowly. Repeat it out loud in the pause.",
+    'recall': "Part two: recall. You'll hear the English. "
+              "Say the Thai out loud before you hear the answer.",
+}
 
-def concatenate_mp3_files(mp3_bytes_list):
-    """Concatenate multiple MP3 byte arrays using ffmpeg."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Write each MP3 to a temp file
-        file_list_path = os.path.join(tmpdir, 'files.txt')
-        file_paths = []
-        
-        for i, mp3_bytes in enumerate(mp3_bytes_list):
-            if mp3_bytes and len(mp3_bytes) > 0:
-                file_path = os.path.join(tmpdir, f'part_{i:04d}.mp3')
-                with open(file_path, 'wb') as f:
-                    f.write(mp3_bytes)
-                file_paths.append(file_path)
-        
-        if not file_paths:
-            return b''
-        
-        # Create file list for ffmpeg concat
-        with open(file_list_path, 'w') as f:
-            for path in file_paths:
-                f.write(f"file '{path}'\n")
-        
-        # Concatenate using ffmpeg - re-encode to ensure consistent format
-        output_path = os.path.join(tmpdir, 'output.mp3')
-        try:
-            result = subprocess.run([
-                'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', file_list_path,
-                '-acodec', 'libmp3lame', '-ar', '16000', '-ab', '32k', '-ac', '1',
-                output_path
-            ], capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                print(f"FFmpeg error: {result.stderr}")
-                return b''
-            
-            with open(output_path, 'rb') as f:
-                return f.read()
-        except Exception as e:
-            print(f"Concatenation error: {e}")
-            return b''
+
+def _export_tts(text, voice, speed):
+    """Synthesize one export clip, retrying transient Azure failures (e.g. 429)."""
+    for attempt in range(EXPORT_TTS_ATTEMPTS):
+        audio = azure_tts_rest(text, voice, speed, output_format=MP3_EXPORT_FORMAT, tight=True)
+        if audio:
+            return audio
+        if attempt < EXPORT_TTS_ATTEMPTS - 1:
+            time.sleep(2 ** attempt)
+    return None
+
+
+def _synthesize_word_clips(word):
+    """Return {'thai', 'thai_slow', 'eng'} clips for one card, or None if any failed."""
+    thai_text = word.get('audio_text') or word['thai']
+    clips = {
+        'thai': _export_tts(thai_text, THAI_VOICE, 0.9),
+        'thai_slow': _export_tts(thai_text, THAI_VOICE, 0.7),
+        'eng': _export_tts(clean_english_for_tts(word['eng']), ENGLISH_VOICE, 1.0),
+    }
+    return clips if all(clips.values()) else None
+
 
 # --- Background MP3 jobs ------------------------------------------------------
-# Generating a deck MP3 makes 2 Azure calls per word + ffmpeg, which is far too
-# slow for one HTTP request. Instead we run it on a background thread and let the
+# Generating a deck MP3 makes 3 Azure calls per word, which is far too slow for
+# one HTTP request. Instead we run it on a background thread and let the
 # client poll for progress, then fetch the finished file.
 DOWNLOAD_JOBS = {}                  # job_id -> {state, progress, total, deck_name, mp3, error}
 DOWNLOAD_JOBS_LOCK = threading.Lock()
@@ -756,51 +741,38 @@ def _prune_jobs():
 
 
 def _run_download_job(job_id, deck_id):
-    """Worker thread: synthesize every word and concatenate into one MP3."""
+    """Worker thread: synthesize every word and assemble the study-track MP3."""
     try:
         deck = MEMORY_DECKS.get(deck_id)
         if not deck:
             _set_job(job_id, state='error', error='Deck not found')
             return
 
-        words = deck['words'].copy()  # copy so shuffle doesn't touch the original
-        random.shuffle(words)
+        words = deck['words']
         total = len(words)
         _set_job(job_id, state='running', total=total, progress=0)
         print(f"   🎵 [{job_id[:8]}] Generating MP3 for {deck['name']} ({total} words)...")
 
-        silence_1s = generate_silence_mp3(1000)
-        silence_2s = generate_silence_mp3(2000)
-        silence_3s = generate_silence_mp3(3000)
+        clips = []
+        with ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
+            intro_futures = {k: pool.submit(_export_tts, text, ENGLISH_VOICE, 1.0)
+                             for k, text in STUDY_INTROS.items()}
+            word_futures = [pool.submit(_synthesize_word_clips, w) for w in words]
+            for done, fut in enumerate(as_completed(word_futures), 1):
+                if fut.result():
+                    clips.append(fut.result())
+                _set_job(job_id, progress=done)
+            intros = {k: f.result() for k, f in intro_futures.items()}
 
-        all_segments = []
-        for i, word in enumerate(words):
-            thai_text = word.get('audio_text', word['thai'])
-            eng_text_clean = clean_english_for_tts(word['eng'])
-
-            thai_audio = generate_audio_bytes(thai_text, "th-TH-PremwadeeNeural", 0.9)
-            eng_audio = generate_audio_bytes(eng_text_clean, "en-US-JennyNeural", 1.0)
-
-            # Sequence per word: Thai, pause, English, pause, Thai, pause.
-            if thai_audio:
-                all_segments.append(thai_audio)
-            all_segments.append(silence_2s)
-            if eng_audio:
-                all_segments.append(eng_audio)
-            all_segments.append(silence_1s)
-            if thai_audio:
-                all_segments.append(thai_audio)
-            all_segments.append(silence_3s)
-
-            _set_job(job_id, progress=i + 1)
-
-        combined = concatenate_mp3_files(all_segments)
-        if not combined:
+        if not clips:
             _set_job(job_id, state='error', error='No audio generated (is AZURE_KEY set?)')
             return
 
-        _set_job(job_id, state='done', mp3=combined)
-        print(f"   ✅ [{job_id[:8]}] MP3 ready for {deck['name']}")
+        skipped = total - len(clips)
+        combined = assemble_study_mp3(clips, intros, random.Random())
+        _set_job(job_id, state='done', mp3=combined, skipped=skipped)
+        print(f"   ✅ [{job_id[:8]}] MP3 ready for {deck['name']}"
+              f" ({len(combined) // 1024} KB, {skipped} skipped)")
     except Exception as e:
         print(f"   ❌ [{job_id[:8]}] MP3 job failed: {e}")
         _set_job(job_id, state='error', error=str(e))
@@ -822,7 +794,7 @@ def start_download(deck_id):
     with DOWNLOAD_JOBS_LOCK:
         DOWNLOAD_JOBS[job_id] = {
             'state': 'pending', 'progress': 0, 'total': deck['count'],
-            'deck_name': deck['name'], 'mp3': None, 'error': None,
+            'deck_name': deck['name'], 'mp3': None, 'error': None, 'skipped': 0,
         }
     threading.Thread(target=_run_download_job, args=(job_id, deck_id), daemon=True).start()
     return jsonify({'job_id': job_id, 'total': deck['count'], 'deck_name': deck['name']})
@@ -837,6 +809,7 @@ def download_status(job_id):
     return jsonify({
         'state': job['state'], 'progress': job['progress'],
         'total': job['total'], 'deck_name': job['deck_name'], 'error': job['error'],
+        'skipped': job['skipped'],
     })
 
 

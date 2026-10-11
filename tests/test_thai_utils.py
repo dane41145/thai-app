@@ -1,7 +1,10 @@
 import pytest
 
-from thai_utils import (LRUCache, clean_english_for_tts, compute_deck_hash, number_to_thai,
-                        pool_unique_words, sample_preferring_unseen)
+import random
+
+from thai_utils import (LRUCache, assemble_study_mp3, clean_english_for_tts, compute_deck_hash,
+                        mp3_duration_ms, number_to_thai, pool_unique_words, recall_gap_ms,
+                        sample_preferring_unseen, shadow_gap_ms, silent_mp3)
 
 # Known-correct spellings, including the two irregular rules the numbers game
 # exists to drill:
@@ -163,3 +166,37 @@ class TestSamplePreferringUnseen:
         before = list(self.POOL)
         sample_preferring_unseen(self.POOL, 3)
         assert self.POOL == before
+
+
+# ------------------------------------------------------------ mp3 track ----
+
+def test_silent_mp3_is_whole_frames_of_requested_length():
+    assert mp3_duration_ms(silent_mp3(1200)) == 1200
+    assert len(silent_mp3(1000)) % 144 == 0
+    assert mp3_duration_ms(silent_mp3(0)) == 24  # never empty
+
+
+def test_gaps_scale_with_thai_length_within_bounds():
+    assert shadow_gap_ms(500) == 2500 and shadow_gap_ms(3000) == 4500 and shadow_gap_ms(20000) == 7000
+    assert recall_gap_ms(500) == 3500 and recall_gap_ms(3000) == 5500 and recall_gap_ms(20000) == 8000
+
+
+def test_study_track_plays_every_word_in_both_passes():
+    # Distinct one-frame "clips" so we can find each in the output.
+    def clip(n):
+        return bytes.fromhex('fff364c4') + n.to_bytes(2, 'big') + bytes(138)
+
+    clips = [{'thai': clip(10 * i + 1), 'thai_slow': clip(10 * i + 2), 'eng': clip(10 * i + 3)}
+             for i in range(5)]
+    intros = {'listen': clip(900), 'recall': clip(901)}
+    out = assemble_study_mp3(clips, intros, random.Random(0))
+    frames = [out[i:i + 144] for i in range(0, len(out), 144)]
+
+    assert frames[0] == intros['listen']
+    split = frames.index(intros['recall'])
+    pass1, pass2 = frames[:split], frames[split:]
+    for c in clips:
+        assert pass1.count(c['thai']) == pass1.count(c['eng']) == pass1.count(c['thai_slow']) == 1
+        assert pass2.count(c['eng']) == pass2.count(c['thai']) == 1 and c['thai_slow'] not in pass2
+        # Recall: English cue comes before the Thai answer.
+        assert pass2.index(c['eng']) < pass2.index(c['thai'])

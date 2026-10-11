@@ -9,6 +9,8 @@ import json
 import sys
 import urllib.parse
 
+import time
+
 import pytest
 import requests
 
@@ -229,6 +231,34 @@ def test_speak_number_rejects_garbage(harness):
 def test_download_start_only_for_vocab(harness):
     assert harness.client.post('/download_deck/script_S1/start').status_code == 400
     assert harness.client.post('/download_deck/vocab_ghost/start').status_code == 404
+
+
+def test_download_builds_two_pass_mp3_without_ffmpeg(harness, monkeypatch):
+    """End to end with Azure stubbed: start → poll → fetch a well-formed MP3.
+    Words whose audio fails are left out and reported, not fatal."""
+    frame = bytes.fromhex('fff364c4') + bytes(140)
+    calls = []
+
+    def fake_tts(text, voice, speed=1.0, output_format=None, tight=False):
+        calls.append(text)
+        return None if text == 'three' else frame * 10   # one word's English clip fails
+
+    monkeypatch.setattr(harness.module, 'azure_tts_rest', fake_tts)
+    monkeypatch.setattr(harness.module, 'EXPORT_TTS_ATTEMPTS', 1)  # no retry backoff
+    job = harness.client.post('/download_deck/vocab_B/start').get_json()
+
+    for _ in range(200):
+        status = harness.client.get(f"/download_status/{job['job_id']}").get_json()
+        if status['state'] in ('done', 'error'):
+            break
+        time.sleep(0.01)
+    assert status['state'] == 'done', status
+    assert status['skipped'] == 1
+
+    res = harness.client.get(f"/download_result/{job['job_id']}")
+    assert res.status_code == 200 and res.mimetype == 'audio/mpeg'
+    assert len(res.data) % 144 == 0 and res.data[:4] == frame[:4]
+    assert harness.client.get(f"/download_status/{job['job_id']}").status_code == 404
 
 
 # --------------------------------------------------------------- gemini ----
