@@ -49,7 +49,7 @@ def ratelimit_handler(e):
 # Use environment variables for sensitive data (set these in Render)
 BOTNOI_KEY = os.environ.get('BOTNOI_KEY')
 # Botnoi V2 speaker IDs (GET /openapi/v1/get_speaker_data_v2 lists them all).
-BOTNOI_THAI_SPEAKER = os.environ.get('BOTNOI_THAI_SPEAKER', '8')        # Ava V2
+BOTNOI_THAI_SPEAKER = os.environ.get('BOTNOI_THAI_SPEAKER', '4')        # Smoke V2 (male)
 BOTNOI_ENGLISH_SPEAKER = os.environ.get('BOTNOI_ENGLISH_SPEAKER', '12')  # Nadia V2
 # Azure is the fallback text-to-speech, used only when BOTNOI_KEY is unset.
 AZURE_KEY = os.environ.get('AZURE_KEY')

@@ -52,7 +52,7 @@ Optional settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BOTNOI_THAI_SPEAKER` | `8` (Ava V2) | Botnoi V2 speaker ID for Thai |
+| `BOTNOI_THAI_SPEAKER` | `4` (Smoke V2) | Botnoi V2 speaker ID for Thai |
 | `BOTNOI_ENGLISH_SPEAKER` | `12` (Nadia V2) | Botnoi V2 speaker ID for the MP3 export's English |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model for Speaking mode; change here when Google retires one |
 | `PROGRESS_FILE` | `./progress.json` | where per-deck progress is stored (see Deployment notes) |
