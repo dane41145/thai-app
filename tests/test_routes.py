@@ -14,6 +14,8 @@ import time
 import pytest
 import requests
 
+from thai_utils import mp3_frames
+
 HEADER = "Thai,Pronunciation,English,Override\n"
 
 # Two vocab tabs that overlap on สอง (with different English, as happens in the
@@ -74,7 +76,7 @@ def harness(tmp_path, monkeypatch):
     monkeypatch.setenv('CONFIG_FILE', str(cfg))
     monkeypatch.setenv('PROGRESS_FILE', str(tmp_path / 'data' / 'progress.json'))
     (tmp_path / 'data').mkdir()
-    for var in ('AZURE_KEY', 'GEMINI_KEY'):
+    for var in ('BOTNOI_KEY', 'AZURE_KEY', 'GEMINI_KEY'):
         monkeypatch.delenv(var, raising=False)
 
     sys.modules.pop('app', None)
@@ -82,6 +84,7 @@ def harness(tmp_path, monkeypatch):
     module.limiter.enabled = False  # tests hit /refresh more than 2/min
     module.app.config['TESTING'] = True
     # load_dotenv may have pulled real keys from a local .env; never use them.
+    module.BOTNOI_KEY = None
     module.AZURE_KEY = None
     module.GEMINI_KEY = None
     yield Harness(module, csv, failing)
@@ -224,6 +227,52 @@ def test_speak_returns_503_without_azure(harness):
     assert res.get_json() == {'error': 'TTS unavailable'}
 
 
+def vbr_clip(gains):
+    """A Botnoi-style clip: VBR info frame, then one 64 kbps frame per gain
+    (0 = digital silence), each tagged with its index so tests can find it."""
+    def frame(i, gain):
+        side = ((100 if gain else 0) << 19 | gain << 2).to_bytes(5, 'big')
+        return bytes.fromhex('fff384c4') + side + i.to_bytes(2, 'big') + bytes(181)
+    info = bytes.fromhex('fff384c4') + bytes(9) + b'Xing' + bytes(175)
+    return info + b''.join(frame(i, g) for i, g in enumerate(gains))
+
+
+def test_speak_uses_botnoi_when_keyed(harness, monkeypatch):
+    harness.module.BOTNOI_KEY = 'BOTNOI-123'
+    clip = vbr_clip([0] * 15 + [160] * 5 + [0] * 15)
+    posts, gets = [], []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        posts.append((url, headers, json))
+        return FakeResponse('{"audio_url": "https://cdn.example/a.mp3", "point": 1}')
+
+    def fake_get(url, timeout=None):
+        gets.append(url)
+        res = FakeResponse('')
+        res.content = clip
+        return res
+
+    monkeypatch.setattr(requests, 'post', fake_post)
+    monkeypatch.setattr(requests, 'get', fake_get)
+    res = harness.client.post('/speak', json={'text': 'สวัสดี', 'speed': 0.9})
+
+    assert res.status_code == 200 and res.mimetype == 'audio/mpeg'
+    url, headers, body = posts[0]
+    assert url.endswith('/generate_audio_v2') and headers == {'botnoi-token': 'BOTNOI-123'}
+    assert body['text'] == 'สวัสดี' and body['language'] == 'th' and body['speed'] == 0.9
+    assert body['speaker'] == harness.module.BOTNOI_THAI_SPEAKER
+    assert gets == ['https://cdn.example/a.mp3']
+    # Padding trimmed to 6 frames before / 10 after the speech; info frame gone.
+    assert len(res.data) == (6 + 5 + 10) * 192 and b'Xing' not in res.data
+
+
+def test_speak_returns_503_when_botnoi_fails(harness, monkeypatch):
+    harness.module.BOTNOI_KEY = 'BOTNOI-123'
+    monkeypatch.setattr(requests, 'post',
+                        lambda *a, **k: FakeResponse('{"detail": "out of points"}', status=403))
+    assert harness.client.post('/speak', json={'text': 'สวัสดี'}).status_code == 503
+
+
 def test_speak_number_rejects_garbage(harness):
     assert harness.client.post('/speak_number', json={'number': 'abc'}).status_code == 400
 
@@ -259,6 +308,31 @@ def test_download_builds_two_pass_mp3_without_ffmpeg(harness, monkeypatch):
     assert res.status_code == 200 and res.mimetype == 'audio/mpeg'
     assert len(res.data) % 144 == 0 and res.data[:4] == frame[:4]
     assert harness.client.get(f"/download_status/{job['job_id']}").status_code == 404
+
+
+def test_download_with_botnoi_splices_trimmed_vbr_clips(harness, monkeypatch):
+    harness.module.BOTNOI_KEY = 'BOTNOI-123'
+    calls = []
+
+    def fake_botnoi(text, lang, speed=1.0):
+        calls.append((text, lang, speed))
+        return vbr_clip([0] * 10 + [150] * 3 + [0] * 10)
+
+    monkeypatch.setattr(harness.module, 'botnoi_tts', fake_botnoi)
+    monkeypatch.setattr(harness.module, 'EXPORT_TTS_ATTEMPTS', 1)  # no retry backoff
+    job = harness.client.post('/download_deck/vocab_A/start').get_json()
+    for _ in range(200):
+        status = harness.client.get(f"/download_status/{job['job_id']}").get_json()
+        if status['state'] in ('done', 'error'):
+            break
+        time.sleep(0.01)
+    assert status['state'] == 'done' and status['skipped'] == 0, status
+
+    assert ('one', 'en', 1.0) in calls and ('หนึ่ง', 'th', 0.7) in calls
+    mp3 = harness.client.get(f"/download_result/{job['job_id']}").data
+    frames = mp3_frames(mp3)
+    # Clips' own info frames are gone; the only one left is the track's, up front.
+    assert frames is not None and mp3.count(b'Xing') == 1 and frames[0][13:17] == b'Xing'
 
 
 # --------------------------------------------------------------- gemini ----

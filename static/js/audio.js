@@ -1,4 +1,4 @@
-// Azure TTS via /speak, shared by the flashcards page and the /classes game.
+// Text-to-speech via /speak, shared by the flashcards page and the /classes game.
 
 const audioCache = {};    // audio_text -> object URL of synthesised MP3
 const audioPending = {};  // audio_text -> in-flight fetch, so preload + play don't double-request

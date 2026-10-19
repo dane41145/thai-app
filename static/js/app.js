@@ -1,6 +1,6 @@
 
 // Warm the cache for the next few cards of the *shuffled* deck, so flipping
-// or advancing doesn't wait on Azure. (The old preload fetched the first five
+// or advancing doesn't wait on TTS. (The old preload fetched the first five
 // rows of the sheet before the shuffle, so it rarely helped.)
 const PRELOAD_AHEAD = 4;
 function preloadUpcomingAudio() {
@@ -1125,7 +1125,7 @@ function playCurrentAudio() {
 
     fetchAudio(textToSpeak).then(url => {
         // Only play if this is still the card on screen. If the user moved on
-        // while Azure was synthesising, the old word used to play over the new
+        // while TTS was synthesising, the old word used to play over the new
         // card (and be mistaken for it).
         const stillCurrent = deck.length && deck[0].audio_text === textToSpeak;
         const gameVisible = document.getElementById('gameContainer').style.display === 'flex';

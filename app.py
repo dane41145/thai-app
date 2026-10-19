@@ -23,9 +23,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from thai_utils import (MP3_EXPORT_FORMAT, LRUCache, assemble_study_mp3, clean_english_for_tts,
                         compute_deck_hash, number_to_thai, pool_unique_words,
-                        sample_preferring_unseen)
+                        sample_preferring_unseen, trim_mp3_silence)
 
-load_dotenv()  # pull AZURE_KEY / AZURE_REGION / GEMINI_KEY from a local .env, if present
+load_dotenv()  # pull BOTNOI_KEY / AZURE_KEY / GEMINI_KEY etc. from a local .env, if present
 
 app = Flask(__name__)
 
@@ -33,7 +33,7 @@ app = Flask(__name__)
 # entry so rate limits apply to the real client IP, not the proxy's.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
-# Per-IP rate limits for the endpoints that cost money (Azure / Gemini) or
+# Per-IP rate limits for the endpoints that cost money (Botnoi / Gemini) or
 # hammer Google Sheets. Only routes with an explicit @limiter.limit are limited.
 # In-memory storage is fine here because the app runs as a single process.
 limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
@@ -47,6 +47,11 @@ def ratelimit_handler(e):
 # CONFIGURATION
 # ==========================================
 # Use environment variables for sensitive data (set these in Render)
+BOTNOI_KEY = os.environ.get('BOTNOI_KEY')
+# Botnoi V2 speaker IDs (GET /openapi/v1/get_speaker_data_v2 lists them all).
+BOTNOI_THAI_SPEAKER = os.environ.get('BOTNOI_THAI_SPEAKER', '8')        # Ava V2
+BOTNOI_ENGLISH_SPEAKER = os.environ.get('BOTNOI_ENGLISH_SPEAKER', '12')  # Nadia V2
+# Azure is the fallback text-to-speech, used only when BOTNOI_KEY is unset.
 AZURE_KEY = os.environ.get('AZURE_KEY')
 AZURE_REGION = os.environ.get('AZURE_REGION', 'southeastasia')
 GEMINI_KEY = os.environ.get('GEMINI_KEY')
@@ -54,8 +59,12 @@ GEMINI_KEY = os.environ.get('GEMINI_KEY')
 # the next retirement is a config change, not a code change.
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.5-flash')
 
-if not AZURE_KEY:
-    print("⚠️ WARNING: AZURE_KEY environment variable not set!")
+if BOTNOI_KEY:
+    print("🔊 Text-to-speech: Botnoi Voice")
+elif AZURE_KEY:
+    print("🔊 Text-to-speech: Azure (set BOTNOI_KEY to use Botnoi Voice)")
+else:
+    print("⚠️ WARNING: neither BOTNOI_KEY nor AZURE_KEY is set — audio is unavailable!")
 if not GEMINI_KEY:
     print("⚠️ WARNING: GEMINI_KEY environment variable not set!")
 
@@ -85,8 +94,9 @@ if not os.path.exists(PROGRESS_FILE):
 # Network timeouts (connect, read) in seconds, so a hung request can't stall us.
 SHEET_TIMEOUT = (5, 15)
 AZURE_TIMEOUT = (5, 30)
+BOTNOI_TIMEOUT = (5, 30)
 
-MAX_TTS_CHARS = 300    # cap /speak input — it's a paid API
+MAX_TTS_CHARS = 300    # cap /speak input — it's a paid API (Botnoi allows 1000)
 AZURE_TOKEN_TTL = 480  # Azure tokens are valid 10 min; reuse ours for 8
 # ==========================================
 
@@ -178,6 +188,70 @@ def azure_tts_rest(text, voice, speed=1.0, output_format=AZURE_APP_FORMAT, tight
     except Exception as e:
         print(f"TTS Error: {e}")
         return None
+
+# ==========================================
+# BOTNOI VOICE TTS
+# ==========================================
+BOTNOI_TTS_URL = 'https://api-voice.botnoi.ai/openapi/v1/generate_audio_v2'
+
+
+def botnoi_tts(text, lang, speed=1.0):
+    """Synthesize `text` with a Botnoi V2 voice; returns MP3 bytes or None.
+
+    Botnoi answers with a link to the finished file rather than the audio, so
+    each clip is two requests. V2 costs 2 points per character (spaces free).
+    """
+    if not BOTNOI_KEY:
+        return None
+
+    try:
+        speed = max(0.5, min(2.0, float(speed)))
+    except (TypeError, ValueError):
+        speed = 1.0
+
+    speaker = BOTNOI_THAI_SPEAKER if lang == 'th' else BOTNOI_ENGLISH_SPEAKER
+    try:
+        response = requests.post(BOTNOI_TTS_URL, headers={'botnoi-token': BOTNOI_KEY}, json={
+            'text': str(text), 'speaker': speaker, 'language': lang, 'speed': speed,
+            'volume': 1, 'type_media': 'mp3', 'save_file': 'True',
+        }, timeout=BOTNOI_TIMEOUT)
+        response.raise_for_status()
+        audio_url = response.json()['audio_url']
+        if not audio_url.startswith('https://'):
+            raise ValueError(f"unexpected audio_url {audio_url!r}")
+        audio = requests.get(audio_url, timeout=BOTNOI_TIMEOUT)
+        audio.raise_for_status()
+        return audio.content
+    except Exception as e:
+        print(f"Botnoi TTS Error: {e}")
+        return None
+
+
+AZURE_THAI_VOICE = "th-TH-PremwadeeNeural"
+AZURE_ENGLISH_VOICE = "en-US-JennyNeural"
+
+
+def synthesize(text, lang='th', speed=1.0, tight=False):
+    """Speak `text` ('th' or 'en') with Botnoi, or Azure when BOTNOI_KEY is
+    unset. Returns MP3 bytes or None.
+
+    tight=True is for the MP3 export: lead-in / tail silence cut to ~70 / 150 ms
+    so the export controls pause lengths, and the clip guaranteed to be in the
+    export's frame format (None otherwise).
+    """
+    if BOTNOI_KEY:
+        audio = botnoi_tts(text, lang, speed)
+        if not audio:
+            return None
+        # Botnoi pads ~0.4 s of silence each side; trim it so playback
+        # starts promptly, keeping a little more margin outside the export.
+        trimmed = trim_mp3_silence(audio, *((3, 6) if tight else (6, 10)))
+        return trimmed if tight else (trimmed or audio)
+
+    voice = AZURE_THAI_VOICE if lang == 'th' else AZURE_ENGLISH_VOICE
+    if tight:
+        return azure_tts_rest(text, voice, speed, output_format=MP3_EXPORT_FORMAT, tight=True)
+    return azure_tts_rest(text, voice, speed)
 
 # ==========================================
 # PROGRESS TRACKING
@@ -540,7 +614,7 @@ def speak():
         return Response(cached, mimetype="audio/mpeg")
 
     try:
-        audio_data = azure_tts_rest(text, "th-TH-PremwadeeNeural", speed)
+        audio_data = synthesize(text, 'th', speed)
         if audio_data:
             AUDIO_CACHE.put(cache_key, audio_data)
             return Response(audio_data, mimetype="audio/mpeg")
@@ -573,7 +647,7 @@ def speak_number():
         return Response(cached, mimetype="audio/mpeg")
 
     try:
-        audio_data = azure_tts_rest(thai_text, "th-TH-PremwadeeNeural", speed)
+        audio_data = synthesize(thai_text, 'th', speed)
         if audio_data:
             AUDIO_CACHE.put(cache_key, audio_data)
             return Response(audio_data, mimetype="audio/mpeg")
@@ -678,9 +752,7 @@ def reset_deck(deck_id):
 # ==========================================
 # MP3 DOWNLOAD
 # ==========================================
-THAI_VOICE = "th-TH-PremwadeeNeural"
-ENGLISH_VOICE = "en-US-JennyNeural"
-EXPORT_WORKERS = 4         # parallel words per job; modest so Azure doesn't throttle us
+EXPORT_WORKERS = 4         # parallel words per job; modest so the TTS API doesn't throttle us
 EXPORT_TTS_ATTEMPTS = 3
 
 STUDY_INTROS = {
@@ -691,10 +763,10 @@ STUDY_INTROS = {
 }
 
 
-def _export_tts(text, voice, speed):
-    """Synthesize one export clip, retrying transient Azure failures (e.g. 429)."""
+def _export_tts(text, lang, speed):
+    """Synthesize one export clip, retrying transient TTS failures (e.g. 429)."""
     for attempt in range(EXPORT_TTS_ATTEMPTS):
-        audio = azure_tts_rest(text, voice, speed, output_format=MP3_EXPORT_FORMAT, tight=True)
+        audio = synthesize(text, lang, speed, tight=True)
         if audio:
             return audio
         if attempt < EXPORT_TTS_ATTEMPTS - 1:
@@ -706,15 +778,15 @@ def _synthesize_word_clips(word):
     """Return {'thai', 'thai_slow', 'eng'} clips for one card, or None if any failed."""
     thai_text = word.get('audio_text') or word['thai']
     clips = {
-        'thai': _export_tts(thai_text, THAI_VOICE, 0.9),
-        'thai_slow': _export_tts(thai_text, THAI_VOICE, 0.7),
-        'eng': _export_tts(clean_english_for_tts(word['eng']), ENGLISH_VOICE, 1.0),
+        'thai': _export_tts(thai_text, 'th', 0.9),
+        'thai_slow': _export_tts(thai_text, 'th', 0.7),
+        'eng': _export_tts(clean_english_for_tts(word['eng']), 'en', 1.0),
     }
     return clips if all(clips.values()) else None
 
 
 # --- Background MP3 jobs ------------------------------------------------------
-# Generating a deck MP3 makes 3 Azure calls per word, which is far too slow for
+# Generating a deck MP3 makes 3 TTS calls per word, which is far too slow for
 # one HTTP request. Instead we run it on a background thread and let the
 # client poll for progress, then fetch the finished file.
 DOWNLOAD_JOBS = {}                  # job_id -> {state, progress, total, deck_name, mp3, error}
@@ -755,7 +827,7 @@ def _run_download_job(job_id, deck_id):
 
         clips = []
         with ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
-            intro_futures = {k: pool.submit(_export_tts, text, ENGLISH_VOICE, 1.0)
+            intro_futures = {k: pool.submit(_export_tts, text, 'en', 1.0)
                              for k, text in STUDY_INTROS.items()}
             word_futures = [pool.submit(_synthesize_word_clips, w) for w in words]
             for done, fut in enumerate(as_completed(word_futures), 1):
@@ -765,7 +837,7 @@ def _run_download_job(job_id, deck_id):
             intros = {k: f.result() for k, f in intro_futures.items()}
 
         if not clips:
-            _set_job(job_id, state='error', error='No audio generated (is AZURE_KEY set?)')
+            _set_job(job_id, state='error', error='No audio generated (is BOTNOI_KEY set?)')
             return
 
         skipped = total - len(clips)

@@ -159,15 +159,21 @@ def clean_english_for_tts(text):
 # ==========================================
 # MP3 STUDY TRACK
 # ==========================================
-# Deck exports use Azure's MPEG-2 Layer III, 24 kHz, 48 kbps mono CBR stream:
-# every frame is exactly 144 bytes holding 24 ms of audio. That lets us join
-# clips byte-for-byte, write silence, and measure durations without ffmpeg.
-MP3_EXPORT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
-MP3_FRAME_BYTES = 144
+# Deck exports are MPEG-2 Layer III, 24 kHz mono: every frame holds 24 ms of
+# audio whatever its bitrate. Botnoi sends that as VBR; Azure's export format
+# is the same stream at a constant 48 kbps. Either way we can join clips
+# frame-for-frame, write silence, and measure durations without ffmpeg.
+MP3_EXPORT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'   # Azure's name for it
+MP3_FRAME_BYTES = 144                                    # one 48 kbps frame
 MP3_FRAME_MS = 24
 _SILENT_FRAME = bytes.fromhex('fff364c4') + bytes(MP3_FRAME_BYTES - 4)
+_KBPS = (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)  # MPEG-2 Layer III
 
-# Pause lengths (ms). Clips are requested with tight padding, so these are
+# A frame this many global_gain steps (1.5 dB each) under the clip's loudest
+# is treated as silence when trimming: ~36 dB down, i.e. room tone.
+SILENCE_BELOW_PEAK = 24
+
+# Pause lengths (ms). Clips are trimmed to tight padding, so these are
 # close to what the listener actually hears.
 GAP_BETWEEN_PARTS = 1200      # Thai → English → slow Thai, within one word
 GAP_AFTER_INTRO = 1500
@@ -179,9 +185,86 @@ def silent_mp3(ms):
     return _SILENT_FRAME * max(1, round(ms / MP3_FRAME_MS))
 
 
+def mp3_frames(data):
+    """Split a 24 kHz mono MPEG-2 Layer III stream into its frames.
+
+    Returns None if the data is anything else (another sample rate, stereo,
+    an ID3 tag, a truncated frame): splicing that into the export would
+    break playback.
+    """
+    frames, i = [], 0
+    while i < len(data):
+        if len(data) - i < 4:
+            return None
+        h = int.from_bytes(data[i:i + 4], 'big')
+        # sync · MPEG-2 · Layer III · 24 kHz · mono
+        if (h >> 17 != 0x7ff9 or (h >> 10) & 3 != 1 or (h >> 6) & 3 != 3
+                or not 0 < (h >> 12) & 15 < 15):
+            return None
+        size = 3 * _KBPS[(h >> 12) & 15] + ((h >> 9) & 1)   # 72000 · kbps / 24000
+        if i + size > len(data):
+            return None
+        frames.append(data[i:i + size])
+        i += size
+    return frames
+
+
 def mp3_duration_ms(data):
-    """Duration of a CBR export-format MP3, from its byte length."""
-    return len(data) // MP3_FRAME_BYTES * MP3_FRAME_MS
+    """Duration of an export-format MP3 (CBR or VBR), from its frame count."""
+    return len(mp3_frames(data) or ()) * MP3_FRAME_MS
+
+
+def _frame_gain(frame):
+    """A frame's global_gain — loudness in 1.5 dB steps, readable without
+    decoding — or 0 if it carries no audio data at all."""
+    side = int.from_bytes(frame[6 if frame[1] & 1 == 0 else 4:][:5], 'big')  # skip CRC
+    part2_3_length = (side >> 19) & 0xfff
+    return (side >> 2) & 0xff if part2_3_length else 0
+
+
+def trim_mp3_silence(data, lead_frames, tail_frames):
+    """Cut a clip down to its speech plus `lead_frames` / `tail_frames` of
+    margin (24 ms each), and drop the VBR info frame, whose length would be
+    wrong once the clip is trimmed or spliced. Botnoi pads every clip with
+    ~0.4 s of near-silence at each end.
+
+    Returns None if the data isn't in the export format (see mp3_frames).
+    """
+    frames = mp3_frames(data)
+    if frames is None:
+        return None
+    frames = [f for f in frames if f[13:17] not in (b'Xing', b'Info')]
+    if not frames:
+        return None
+    gains = [_frame_gain(f) for f in frames]
+    floor = max(gains) - SILENCE_BELOW_PEAK
+    voiced = [i for i, g in enumerate(gains) if g and g >= floor]
+    if not voiced:
+        return None
+    start = max(0, voiced[0] - lead_frames)
+    end = min(len(frames), voiced[-1] + 1 + tail_frames)
+    return b''.join(frames[start:end])
+
+
+def with_vbr_header(data):
+    """Prepend a Xing frame giving the track's frame count, byte length and a
+    seek table. Without it players guess a VBR file's length from its first
+    frames' bitrate: a 7:13 export showed as 5:37, and seeking missed."""
+    frames = mp3_frames(data)
+    if not frames:
+        return data
+    total = MP3_FRAME_BYTES + len(data)
+    offsets, pos = [], 0
+    for f in frames:
+        offsets.append(pos)
+        pos += len(f)
+    # TOC[i]: where i% of the way through the audio falls, in 256ths of the file.
+    toc = bytes(min(255, (MP3_FRAME_BYTES + offsets[len(frames) * i // 100]) * 256 // total)
+                for i in range(100))
+    xing = (b'Xing' + (0x7).to_bytes(4, 'big')     # flags: frames, bytes, TOC present
+            + len(frames).to_bytes(4, 'big') + total.to_bytes(4, 'big') + toc)
+    header = _SILENT_FRAME[:13] + xing               # frame header + empty side info
+    return header + bytes(MP3_FRAME_BYTES - len(header)) + data
 
 
 def shadow_gap_ms(thai_ms):
@@ -232,4 +315,4 @@ def assemble_study_mp3(clips, intros, rng):
         out += [c['eng'], silent_mp3(recall_gap_ms(thai_ms)),
                 c['thai'], silent_mp3(shadow_gap_ms(thai_ms))]
 
-    return b''.join(out)
+    return with_vbr_header(b''.join(out))

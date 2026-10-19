@@ -3,8 +3,9 @@ import pytest
 import random
 
 from thai_utils import (LRUCache, assemble_study_mp3, clean_english_for_tts, compute_deck_hash,
-                        mp3_duration_ms, number_to_thai, pool_unique_words, recall_gap_ms,
-                        sample_preferring_unseen, shadow_gap_ms, silent_mp3)
+                        mp3_duration_ms, mp3_frames, number_to_thai, pool_unique_words,
+                        recall_gap_ms, sample_preferring_unseen, shadow_gap_ms, silent_mp3,
+                        trim_mp3_silence, with_vbr_header)
 
 # Known-correct spellings, including the two irregular rules the numbers game
 # exists to drill:
@@ -192,6 +193,8 @@ def test_study_track_plays_every_word_in_both_passes():
     out = assemble_study_mp3(clips, intros, random.Random(0))
     frames = [out[i:i + 144] for i in range(0, len(out), 144)]
 
+    assert frames[0][13:17] == b'Xing'   # length header for players
+    frames = frames[1:]
     assert frames[0] == intros['listen']
     split = frames.index(intros['recall'])
     pass1, pass2 = frames[:split], frames[split:]
@@ -200,3 +203,54 @@ def test_study_track_plays_every_word_in_both_passes():
         assert pass2.count(c['eng']) == pass2.count(c['thai']) == 1 and c['thai_slow'] not in pass2
         # Recall: English cue comes before the Thai answer.
         assert pass2.index(c['eng']) < pass2.index(c['thai'])
+
+
+def vbr_frame(gain, kbps_index=8):
+    """One 24 kHz mono MPEG-2 Layer III frame with the given global_gain
+    (0 = no audio data). Index 8 is 64 kbps: 192-byte frames."""
+    size = 3 * [0, 8, 16, 24, 32, 40, 48, 56, 64][kbps_index]
+    side = ((100 if gain else 0) << 19 | gain << 2).to_bytes(5, 'big')
+    return bytes([0xff, 0xf3, kbps_index << 4 | 0x4, 0xc4]) + side + bytes(size - 9)
+
+
+def test_mp3_frames_splits_vbr_and_rejects_other_formats():
+    data = vbr_frame(150) + silent_mp3(48) + vbr_frame(160, kbps_index=4)
+    assert [len(f) for f in mp3_frames(data)] == [192, 144, 144, 96]
+    assert mp3_duration_ms(data) == 4 * 24
+    assert mp3_frames(data[:-1]) is None                      # truncated
+    assert mp3_frames(b'ID3' + bytes(20) + data) is None      # tagged
+    stereo = bytes([0xff, 0xf3, 0x84, 0x04]) + bytes(188)
+    assert mp3_frames(stereo) is None
+    khz16 = bytes([0xff, 0xf3, 0x88, 0xc4]) + bytes(188)
+    assert mp3_frames(khz16) is None
+
+
+def test_trim_keeps_speech_plus_margins_and_drops_info_frame():
+    info = bytes([0xff, 0xf3, 0x84, 0xc4]) + bytes(9) + b'Xing' + bytes(175)
+    room_tone = [vbr_frame(140)] * 8          # 36 dB under the peak: silence
+    speech = [vbr_frame(g) for g in (155, 170, 176, 160)]
+    clip = info + vbr_frame(0) + b''.join(room_tone + speech + room_tone)
+
+    out = trim_mp3_silence(clip, 2, 3)
+    assert out == b''.join(room_tone[:2] + speech + room_tone[:3])
+    # Margins larger than the padding just keep everything but the info frame.
+    assert trim_mp3_silence(clip, 50, 50) == clip[len(info):]
+
+
+def test_trim_rejects_clips_it_cannot_splice():
+    assert trim_mp3_silence(b'not an mp3', 2, 3) is None
+    assert trim_mp3_silence(vbr_frame(0) * 5, 2, 3) is None   # all digital silence
+
+
+def test_vbr_header_records_length_and_seek_table():
+    track = vbr_frame(150) * 50 + silent_mp3(24 * 50)       # first half 192 B frames, second 144
+    out = with_vbr_header(track)
+    assert out[144:] == track and out[13:17] == b'Xing'
+    assert int.from_bytes(out[21:25], 'big') == 100                   # frames
+    assert int.from_bytes(out[25:29], 'big') == len(out)              # bytes
+    toc = out[29:129]
+    assert toc[0] == 144 * 256 // len(out)
+    assert toc[50] == (144 + 50 * 192) * 256 // len(out)              # halfway in time
+    assert list(toc) == sorted(toc)
+    assert mp3_duration_ms(out) == 101 * 24                           # header frame is silent
+    assert with_vbr_header(b'junk') == b'junk'

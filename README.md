@@ -1,7 +1,7 @@
 # Thai Flashcards
 
 A self-hosted web app for learning Thai: flashcard decks fed by Google Sheets,
-Azure neural text-to-speech, a consonant trainer, a number-listening game, and
+Botnoi Voice text-to-speech, a consonant trainer, a number-listening game, and
 AI-generated speaking practice.
 
 ## Modes
@@ -42,7 +42,8 @@ Keys enable the paid features:
 
 | Variable | Service | Enables |
 |---|---|---|
-| `AZURE_KEY` / `AZURE_REGION` | Azure Speech | word/sentence audio, numbers game, MP3 export |
+| `BOTNOI_KEY` | Botnoi Voice | word/sentence audio, numbers game, MP3 export |
+| `AZURE_KEY` / `AZURE_REGION` | Azure Speech | the same audio, used only when `BOTNOI_KEY` is unset |
 | `GEMINI_KEY` | Google Gemini | Speaking mode sentence generation |
 
 On Render, set these as environment variables in the dashboard instead.
@@ -51,6 +52,8 @@ Optional settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `BOTNOI_THAI_SPEAKER` | `8` (Ava V2) | Botnoi V2 speaker ID for Thai |
+| `BOTNOI_ENGLISH_SPEAKER` | `12` (Nadia V2) | Botnoi V2 speaker ID for the MP3 export's English |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Gemini model for Speaking mode; change here when Google retires one |
 | `PROGRESS_FILE` | `./progress.json` | where per-deck progress is stored (see Deployment notes) |
 | `CONFIG_FILE` | `./config.json` | deck source list |
